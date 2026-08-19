@@ -64,6 +64,13 @@ AI 在这些区域**只能产出改动方案 / 写到独立分支或草稿 PR**�
 - Requirement ID 分配后**保持稳定**，跨 spec / 实现 / 测试引用
 - 改 spec 走 Change Proposal + 评审（`specs/` 在禁改区）
 
+### plan 文档生命周期
+
+- **plan（`docs/plans/`）是一次性过程文档，不是业务真相**；实施完成后其价值已沉淀进 `specs/`（业务规则）+ `docs/adr/`（决策理由）。
+- **清理流程**：①迁移内容（业务规则→spec、决策理由→ADR）→ ②归档（`docs/archive/` 或标记 `_superseded`）→ ③在 `scripts/check-doc-links.sh` 的 `BANNED` 登记（防回退 + 防断链）→ ④物理删除。
+- **保留条件**：未收尾的 plan、尚未迁移进 ADR 的决策理由——先迁移再删。
+- **目的**：docs 主线保持精简，新成员只读 AGENTS.md + specs，不被过时 plan 干扰。
+
 ## 6. 分发与个人层边界
 
 - 全局基线经 `scripts/distribute.sh` 手动下发，版本提示见 VERSION
