@@ -18,7 +18,7 @@
 git clone git@github.com:peanutgao/hengqin-backend.git
 git clone git@github.com:peanutgao/hengqin-desktop.git
 git clone git@github.com:peanutgao/hengqin-admin.git
-git clone <agent-governance 的地址>   # 规则仓，尚未上远端时找技术负责人
+git clone https://github.com/peanutgao/agent-governance.git   # 规则仓
 ```
 
 ## 3. 装全局规则基线
