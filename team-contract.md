@@ -129,51 +129,29 @@ Governance-Exception: <禁改区> | approved-by=@<owner> | reason=<一句话>
   不再经全局分发——分发版曾设计成「仅当本机不存在才安装」，而每个人都已有该文件，等于永远不生效
 - 🔴 **禁止把本机 `~/.claude/settings.json` 提交进任何仓库**：该文件常含明文 API key 与代理配置
 
-## 7. AI 数据与执行边界
+## 7. AI 数据与执行边界（团队特定部分）
 
-### 7.1 生产环境：只读可以，写必须人来
+**行为规则的权威源是全局基线 `global/AGENTS.md` 的「AI 数据与执行边界」**（生产只读、三类数据不得投喂、远端不可逆操作要人确认）。本节只补本团队特定的通道清单与落地方式，不复述规则正文。
 
-- AI **可以**读生产：查日志、`SELECT`、看容器与服务状态、读非敏感配置。
-- AI **不得**写生产：`UPDATE` / `DELETE`、跑迁移、部署、重启服务、改生产配置。这些 AI 只产出命令与方案，**由人执行**。
-- 理由：读最坏是泄露，写最坏是不可逆——迁移跑错、数据删错、线上打挂都没有回退按钮。
+### 7.1 已批准的模型通道
 
-### 7.2 不得喂给 AI 的数据
-
-以下三类**一律不得**贴进对话、日志、issue 或提示词；需要样例时用脱敏数据或造假数据：
-
-1. **密钥与凭据**：生产 `.env`、API key、token、证书、私钥、数据库口令、发布签名密钥
-2. **客户个人信息**：手机号、邮箱、收货地址、身份信息
-3. **真实支付数据**：真实订单、支付流水、对账明细
-
-🔴 `~/.claude/settings.json` 含明文 API key，禁止提交进任何仓库。
-
-### 7.3 模型通道：限已批准清单
-
-源代码可以走第三方 AI 中转，但**只能走下列已批准通道**；新增通道需技术负责人批准并更新本清单。
+源代码可以走第三方 AI 中转，但**只能走下列通道**；新增需技术负责人批准并更新本表。
 
 | 通道 | 说明 |
 |---|---|
 | Anthropic 官方 API / Claude Code 默认端点 | 默认可用 |
-| `https://opencode.ai/zen`（当前团队在用） | 第三方中转，落到 deepseek / glm / grok 等非 Anthropic 模型 |
+| `https://opencode.ai/zen` | 团队当前在用；第三方中转，落到 deepseek / glm / grok 等非 Anthropic 模型 |
 
-配置通道即决定了代码流向哪家厂商，因此这是团队决定，不是个人偏好。§7.2 的三类数据在**任何**通道下都不得发送。
+全局基线里的三类禁投喂数据，在**任何**通道下都不得发送。
 
-### 7.4 不可逆操作：远端要人确认
+### 7.2 机器拦截落地
 
-| 操作 | AI 能否自行执行 |
-|---|---|
-| `git push --force` / `--force-with-lease` / `-f` | ❌ 只出命令 |
-| 删除远端分支或 tag（`push --delete`、`push :ref`） | ❌ 只出命令 |
-| 重写已推送历史（`filter-branch`、`reflog expire`、`gc --prune=now`） | ❌ 只出命令 |
-| 生产部署脚本（`deploy-docker.sh`、`init-production-env.sh`） | ❌ 只出命令 |
-| 执行数据库迁移 | ❌ 只出命令 |
-| 本地 `reset --hard` / `rebase` / 删本地分支 / 清工作区 | ✅ 可自行（reflog 可救） |
+各项目 `.claude/hooks/guard-destructive.sh`（PreToolUse(Bash) 钩子，在 `.claude/settings.json` 挂载，随项目 git 分发，对所有成员生效）拦截：
 
-### 7.5 机器拦截（不靠自觉）
+- force push、删远端分支/tag、重写历史
+- 本仓生产脚本：`deploy-docker.sh`、`init-production-env.sh`
+- 执行数据库迁移（`migration:run` / `migration:revert`）
 
-§7.4 的禁止项由各项目 `.claude/hooks/guard-destructive.sh`（PreToolUse 钩子）硬拦截，在 `.claude/settings.json` 里挂载，随项目 git 分发，对所有成员生效。
+用钩子而非 `permissions.deny`：deny 是**前缀匹配**，拦得住 `git push --force …`，拦不住 `git push origin --force`；钩子按整条命令做正则判断。触发时返回退出码 2，命令不执行，AI 收到拦截原因。
 
-- 用钩子而非 `permissions.deny`：deny 是**前缀匹配**，拦得住 `git push --force …`，拦不住 `git push origin --force`；钩子按整条命令做正则判断。
-- 钩子被触发时返回退出码 2，改动不会执行，AI 会收到拦截原因。
-- 钩子改动属禁改区（`/.github/` 与 `.claude/`），放宽拦截规则必须走 owner 批准。
-- **生产数据库的读/写区分无法在命令层可靠识别**，§7.1 的写入禁令靠契约与人审，钩子只兜住部署脚本与迁移这两个确定信号。
+**生产数据库的读/写在命令层无法可靠区分**，全局基线里的生产写入禁令靠契约与人审，钩子只兜住部署脚本与迁移这两个确定信号。钩子与 `.claude/` 属禁改区，放宽规则须 owner 批准。
