@@ -315,7 +315,7 @@ Remove any positive request to put a model name in a commit trailer.
 
 - [ ] **Step 2: Add a commit-policy workflow per project**
 
-Use `actions/checkout@v5` with `fetch-depth: 0`, then run the repository-local script. For pull requests, check `${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}`. For pushes, check `${{ github.event.before }}..${{ github.sha }}`, and handle an all-zero `before` SHA by checking only the current commit.
+Use `actions/checkout@v5` with `fetch-depth: 0`, then run the repository-local script. For pull requests, check `${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}`. For pushes, check `${{ github.event.before }}..${{ github.sha }}`; when `before` is all zero, parse `${{ toJSON(github.event.commits) }}` with `jq` and check every pushed commit individually, including the root-commit case.
 
 The workflow must not scan or rewrite full history as a merge failure. It must not print full commit messages or credentials.
 
