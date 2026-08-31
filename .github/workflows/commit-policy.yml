@@ -1,0 +1,66 @@
+name: Commit attribution policy
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  commit-attribution:
+    name: Check commit attribution
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Run attribution checker tests
+        run: bash tests/check-commit-attribution.sh
+
+      - name: Reject AI/Bot commit attribution
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_AFTER_SHA: ${{ github.sha }}
+          PUSH_DELETED: ${{ github.event.deleted }}
+        run: |
+          set -euo pipefail
+
+          all_zero_sha="0000000000000000000000000000000000000000"
+
+          if [[ "$PUSH_DELETED" == "true" || "$PUSH_AFTER_SHA" == "$all_zero_sha" ]]; then
+            echo "No commit to check for this push event."
+            exit 0
+          fi
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            bash scripts/check-commit-attribution.sh \
+              --range "$PR_BASE_SHA..$PR_HEAD_SHA"
+          elif [[ "$PUSH_BEFORE_SHA" == "$all_zero_sha" ]]; then
+            command -v jq >/dev/null 2>&1 || { echo "jq is required for a new-branch push check." >&2; exit 1; }
+            push_commit_count="$(jq -r '(.commits // []) | length' "$GITHUB_EVENT_PATH")"
+            if [[ "$push_commit_count" -ge 2048 ]]; then
+              echo "Push payload may be truncated at 2048 commits; open a PR or run the range check manually." >&2
+              exit 1
+            fi
+            push_commits="$(jq -r '.commits[].id' "$GITHUB_EVENT_PATH")"
+            [[ -n "$push_commits" ]] || { echo "No new commit metadata in this push event."; exit 0; }
+            while IFS= read -r commit; do
+              [[ -z "$commit" ]] && continue
+              if git rev-parse "$commit^" >/dev/null 2>&1; then
+                bash scripts/check-commit-attribution.sh \
+                  --range "$commit^..$commit"
+              else
+                bash scripts/check-commit-attribution.sh \
+                  --commit "$commit"
+              fi
+            done <<< "$push_commits"
+          else
+            bash scripts/check-commit-attribution.sh \
+              --range "$PUSH_BEFORE_SHA..$PUSH_AFTER_SHA"
+          fi

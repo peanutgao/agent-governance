@@ -1,0 +1,11 @@
+# 公共 AI 治理源和同步模板必须由治理 owner 审核。
+# 业务项目的本地 AGENTS.md、Spec 和代码由各项目仓库自己负责。
+
+/global/                             @peanutgao
+/templates/project/                  @peanutgao
+/.github/                            @peanutgao
+/.githooks/commit-msg                @peanutgao
+/scripts/check-commit-attribution.sh @peanutgao
+/scripts/sync-project-governance.sh  @peanutgao
+/scripts/check-version-bump.sh       @peanutgao
+/team-contract.md                    @peanutgao

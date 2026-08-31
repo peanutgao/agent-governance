@@ -681,6 +681,23 @@ Open decision:
 
 如果任务本身已经包含明确批准的新业务行为，则无需再次要求确认。
 
+## 21.1 GIT COMMIT ATTRIBUTION
+
+AI、模型、Agent 或 Bot 不得作为 Git commit 的 author 或 committer。
+
+新 commit message 禁止出现以下 trailer 或等价作者归属声明：
+
+```text
+Co-Authored-By:
+Co-authored-by:
+Co-Author:
+Coauthor:
+```
+
+AI 参与只能在 PR、Issue、审查报告或任务总结中披露，不得写入 commit metadata。历史提交不重写，本规则只阻止新提交。
+
+`Governance-Exception: ...` 尾注是 owner 审批记录，不受本禁令影响。拦截清单与执行细节以 agent-governance 的 `scripts/check-commit-attribution.sh` 为准。
+
 ## 22. EXECUTION SUMMARY FORMAT
 
 每次任务结束时输出：

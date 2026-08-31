@@ -3,7 +3,7 @@
 #
 # 用法: bash scripts/check-version-bump.sh
 #
-# 规则文件（global/ 与 team-contract.md）一旦变更，VERSION 必须在同一次或更晚的
+# 规则文件（global/、templates/project/、.github/、.githooks/、team-contract.md 与公共检查脚本）一旦变更，VERSION 必须在同一次或更晚的
 # 提交里 bump，否则各成员的 .gov-version 不变、distribute.sh 会显示「已是最新」，
 # 新规则悄悄地发不下去。本脚本纯本地 git，不依赖 remote。
 set -euo pipefail
@@ -11,7 +11,18 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_DIR"
 
-RULE_PATHS=(global team-contract.md)
+RULE_PATHS=(
+  global
+  templates/project
+  .github
+  .githooks
+  README.md
+  onboarding.md
+  scripts/check-commit-attribution.sh
+  scripts/sync-project-governance.sh
+  scripts/check-version-bump.sh
+  team-contract.md
+)
 
 # --- 1. 工作区必须干净：分发的是工作区内容，未提交的规则不该下发给团队 ---
 dirty="$(git status --porcelain -- "${RULE_PATHS[@]}" VERSION)"
@@ -21,21 +32,27 @@ if [[ -n "$dirty" ]]; then
   exit 1
 fi
 
-# --- 2. VERSION 的最后改动不得早于规则文件的最后改动 ---
-rules_ts="$(git log -1 --format=%ct -- "${RULE_PATHS[@]}")"
-version_ts="$(git log -1 --format=%ct -- VERSION)"
+# --- 2. VERSION 的最近一次提交必须包含所有规则文件的最近一次提交 ---
+version_commit="$(git log -1 --format=%H -- VERSION)"
 
-if [[ -z "$version_ts" ]]; then
+if [[ -z "$version_commit" ]]; then
   echo "错误: VERSION 从未被提交过。" >&2
   exit 1
 fi
 
-if (( rules_ts > version_ts )); then
-  echo "错误: 规则文件比 VERSION 新——改了规则却没 bump VERSION。" >&2
-  echo "      规则最后改动: $(git log -1 --format='%h %ad %s' --date=short -- "${RULE_PATHS[@]}")" >&2
-  echo "      VERSION 最后改动: $(git log -1 --format='%h %ad %s' --date=short -- VERSION)" >&2
-  echo "      → 修正: 更新 VERSION 后重新提交。" >&2
-  exit 1
-fi
+for rule_path in "${RULE_PATHS[@]}"; do
+  rule_commit="$(git log -1 --format=%H -- "$rule_path")"
+  if [[ -z "$rule_commit" ]]; then
+    echo "错误: 规则路径从未被提交过: $rule_path" >&2
+    exit 1
+  fi
+  if ! git merge-base --is-ancestor "$rule_commit" "$version_commit"; then
+    echo "错误: 规则路径最近一次提交不在 VERSION 提交之前——改了规则却没 bump VERSION: $rule_path" >&2
+    echo "      规则提交: $(git log -1 --format='%h %ad %s' --date=short -- "$rule_path")" >&2
+    echo "      VERSION 提交: $(git log -1 --format='%h %ad %s' --date=short -- VERSION)" >&2
+    echo "      → 修正: 更新 VERSION 后重新提交。" >&2
+    exit 1
+  fi
+done
 
-echo "✓ VERSION（$(tr -d '[:space:]' < VERSION)）不早于规则文件的最后改动。"
+echo "✓ VERSION（$(tr -d '[:space:]' < VERSION)）的提交包含所有规则路径的最近一次提交。"

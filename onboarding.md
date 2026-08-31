@@ -25,7 +25,10 @@ git clone https://github.com/peanutgao/agent-governance.git   # 规则仓
 
 ```bash
 cd agent-governance && bash scripts/distribute.sh
+git config core.hooksPath .githooks   # 启用 commit-msg 提交归属检查钩子（per-clone 一次性设置）
 ```
+
+> `core.hooksPath` 不随 clone 传播，每个新 clone 都要执行一次；跳过则本地无钩子拦截（CI 仍会查）。
 
 装完后：
 
@@ -62,8 +65,24 @@ cd hengqin-admin   && npm ci && npm run dev      # 127.0.0.1:50003
 3. 提交信息 `<type>: <subject>`，type = `feat|fix|refactor|docs|test|chore|perf`，**不加 scope**
 4. 自验：`npm run lint` + `npm test`（结果要贴进 PR）
 5. 提 PR，按模板逐项填——「验证证据」表贴**真实命令与输出**，不写「已通过」
-6. 用了 AI 就在「AI 参与」节说明，并给 commit 带 `Co-Authored-By: <模型名>`
+6. 用了 AI 就在 PR 的「AI 参与」节说明参与范围和人工复核范围；不得在 commit author、committer 或 trailer 中写入 AI/Bot 身份
 7. 碰到禁改区（`team-contract.md` §2.2）→ 先找 owner，别自己合
+
+## 公共规则同步
+
+项目仓库自身携带 AI-GOVERNANCE.md，因此单独 clone Backend、Desktop、Admin 或其他项目也能执行公共治理规则；agent-governance 只在公共规则升级时参与同步。
+
+同步现有项目快照：
+
+~~~bash
+cd agent-governance
+bash scripts/sync-project-governance.sh \
+  --repo /path/to/hengqin-backend \
+  --repo /path/to/hengqin-desktop \
+  --repo /path/to/hengqin-admin
+~~~
+
+公共规则版本升级时，各项目维护者分别提交自己的快照更新 PR。AI 参与写在 PR，不得写入 commit author、committer 或合作作者 trailer（含等价变体）。
 
 ## 7. 发布前
 

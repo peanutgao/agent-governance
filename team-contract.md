@@ -88,11 +88,16 @@ Governance-Exception: <禁改区> | approved-by=@<owner> | reason=<一句话>
 
 没有这行 trailer 的禁改区改动，一律按未授权处理（后续可由 CI 检测该 trailer）。
 
+**收窄：新建 spec 不要求 trailer。** 在 `specs/` / `**/spec/` 下新建此前不存在的 spec 文件，且不改动任何
+已有 `approved` / `active` 条目时，只需 owner 在当次会话中确认内容即可落盘；为该新 spec 所做的索引与
+traceability 登记同属此列。原本没有业务真相存在，也就不存在被静默改写的风险。修改既有 spec（改写
+Business Rules / Acceptance Criteria、变更状态机、标记 deprecated、或新 spec 覆盖既有规则）不适用本收窄。
+
 ## 3. AI 改动守则
 
 每个 AI 改动必须：
 1. **自验**：typecheck / lint / 相关测试通过，结果写进 PR 的「验证证据」表（贴真实命令与输出，不写「已通过」）
-2. **标 author**：`Co-Authored-By: <AI 模型名>`
+2. **禁止 AI 提交归属**：AI、模型、Agent 或 Bot 不得出现在 Git commit 的 author、committer 或 co-author metadata 中；项目提交禁止出现任何合作作者 trailer（含 `Co-Author`、`Coauthor` 等变体）。AI 参与只能在 PR、Issue、审查报告或任务总结中披露。变体清单、`Governance-Exception` 尾注边界与「历史不重写」细则见全局基线「Git 提交作者归属」。
 3. **走 PR**：不直接推主干
 4. **不碰禁改区**：触碰必须有 owner 批准 + §2.3 的 trailer
 5. **决策引用 spec / ADR**（Requirement ID）
