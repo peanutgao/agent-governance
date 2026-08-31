@@ -49,7 +49,7 @@ jobs:
               exit 1
             fi
             push_commits="$(jq -r '.commits[].id' "$GITHUB_EVENT_PATH")"
-            [[ -n "$push_commits" ]] || { echo "No new commit metadata in this push event."; exit 0; }
+            [[ -n "$push_commits" ]] || { echo "Push event has no commit metadata; refusing to silently skip enforcement." >&2; exit 1; }
             while IFS= read -r commit; do
               [[ -z "$commit" ]] && continue
               if git rev-parse "$commit^" >/dev/null 2>&1; then

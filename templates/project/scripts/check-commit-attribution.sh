@@ -5,6 +5,9 @@ set -euo pipefail
 #
 # 检查 Git commit 是否把 AI、模型、Agent 或 Bot 写入作者归属信息。
 # 该脚本只读 message/commit metadata，不自动改写提交、Git 配置或历史。
+#
+# 注意：--audit-history 会对政策生效前（含 Co-Authored-By 的旧 commit）报红，这是
+# 「历史不重写」的预期行为，不是回归；日常用 --range 只查新增 commit。
 
 usage() {
   cat >&2 <<'USAGE'
@@ -16,7 +19,7 @@ usage() {
 USAGE
 }
 
-# 身份与域名清单：变更须同步 templates/project/scripts/check-commit-attribution.sh 与 templates/project/AI-GOVERNANCE.md §12。
+# 身份与域名清单：变更须同步 templates/project/scripts/check-commit-attribution.sh 与 templates/project/AI-GOVERNANCE.md §14。
 KNOWN_AI_IDENTITY_REGEX='(^|[^[:alnum:]])(claude|claudecode|gpt|chatgpt|openai|anthropic|codex|copilot|cursor|codeium|gemini|commandcode|commandcodebot|github-actions|dependabot|renovate|gitlab-ci|jenkins|circleci|buildkite|aider|windsurf|replit)([^[:alnum:]]|$)|(^|[^[:alnum:]])(anthropic\.com|openai\.com|commandcode\.ai)([^[:alnum:]]|$)'
 CO_AUTHOR_TRAILER_REGEX='^[[:space:]]*co[[:space:]_.-]*author(ed)?[[:space:]_.-]*(by)?[[:space:]]*:'
 
