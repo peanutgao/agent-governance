@@ -101,6 +101,7 @@ Business Rules / Acceptance Criteria、变更状态机、标记 deprecated、或
 3. **走 PR**：不直接推主干
 4. **不碰禁改区**：触碰必须有 owner 批准 + §2.3 的 trailer
 5. **决策引用 spec / ADR**（Requirement ID）
+6. **澄清优先于计划**：需求未澄清、存在未决决策时，先以 grilling / 对抗式拷问逐条达成共识，再进入设计冻结与计划；不得直接产出 plan 文档跳过拷问
 
 ## 4. 规则变更流程
 

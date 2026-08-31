@@ -112,6 +112,8 @@ Change Proposal
 
 未确认的 Change Proposal 不是正式业务真相，不能作为实现依据。
 
+需求尚未澄清、存在未决决策时，禁止直接产出计划文档；必须先以对抗式拷问逐条达成共识，再进入设计与计划编写。
+
 ## 6. Bug 和架构问题
 
 Implementation Bug 的处理方式：
