@@ -69,4 +69,4 @@ git pull --ff-only
 bash scripts/distribute.sh
 ```
 
-首次使用见 [`onboarding.md`](onboarding.md)。本仓的 `docs/` 只保存治理仓自己的研究和历史资料，不属于本机全局规则自动加载内容。
+首次使用见 [`onboarding.md`](onboarding.md)。本仓不保存设计文档或历史资料；规则、脚本和检查的当前行为以代码、测试和提交历史为准。
