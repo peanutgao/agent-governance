@@ -12,6 +12,16 @@ trap cleanup EXIT
 
 failures=0
 
+# 测试必须自洽：不得依赖开发机或 CI runner 的 git 身份配置。
+# 若环境里没有 user.name / user.email，且主机名不带域名（GitHub Actions runner 常见），
+# `git var GIT_AUTHOR_IDENT` 会直接失败；检查器按失败关闭返回 2，
+# 于是所有 message 层用例会集体误报「expected exit 1, got 2」。
+# 这里固定一份中性基线身份，需要换身份的用例再逐条用 env 覆盖。
+export GIT_AUTHOR_NAME="Test Author"
+export GIT_AUTHOR_EMAIL="author@example.invalid"
+export GIT_COMMITTER_NAME="Test Committer"
+export GIT_COMMITTER_EMAIL="committer@example.invalid"
+
 expect_success() {
   local label="$1"
   shift
@@ -121,6 +131,13 @@ expect_failure_code current-human-bot-email 1 env GIT_AUTHOR_EMAIL='bot-service@
 expect_failure_code current-human-name-ai-titlecase 0 env GIT_AUTHOR_NAME='Ai Wei' GIT_AUTHOR_EMAIL=aiwei@example.invalid "$CHECKER" --message "$TEST_ROOT/human.txt"
 expect_failure_code current-uppercase-ai-name 1 env GIT_AUTHOR_NAME='AI' GIT_AUTHOR_EMAIL=noreply@example.invalid "$CHECKER" --message "$TEST_ROOT/human.txt"
 expect_failure_code current-assistant-name 1 env GIT_AUTHOR_NAME='Assistant' GIT_AUTHOR_EMAIL=assistant@example.invalid "$CHECKER" --message "$TEST_ROOT/human.txt"
+
+# 身份读不到时必须失败关闭（退出 2），不能默默跳过身份层。
+# 空 GIT_AUTHOR_NAME 会让 `git var GIT_AUTHOR_IDENT` 在任何平台都失败，
+# 因此这条同时是「测试环境不得依赖环境身份」的回归保护。
+expect_failure_code identity-unreadable-fails-closed 2 \
+  env GIT_AUTHOR_NAME= GIT_AUTHOR_EMAIL= GIT_COMMITTER_NAME= GIT_COMMITTER_EMAIL= \
+  "$CHECKER" --message "$TEST_ROOT/human.txt"
 
 git -C "$REPO" commit --allow-empty -q -m "chore: baseline"
 base_commit="$(git -C "$REPO" rev-parse HEAD)"
