@@ -1,2 +1,8 @@
 .DS_Store
-.workbuddy-ai/
+
+# WorkBuddy 工作区数据：只跟踪 memory/ 下的 markdown 工作记录，
+# 会话缓存与临时产物不入仓。
+.workbuddy-ai/*
+!.workbuddy-ai/memory/
+.workbuddy-ai/memory/*
+!.workbuddy-ai/memory/*.md
