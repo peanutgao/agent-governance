@@ -17,8 +17,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run attribution checker tests
-        run: bash tests/check-commit-attribution.sh
+      - name: Run governance test suites
+        run: bash tests/run-all.sh
 
       - name: Reject AI/Bot commit attribution
         env:
@@ -33,6 +33,8 @@ jobs:
 
           all_zero_sha="0000000000000000000000000000000000000000"
 
+          # 本仓是规则源，提交必然要描述「AI 归属」这件事本身，因此用 --governance：
+          # 只跳过 message 披露短语检查，co-author trailer 与身份检查照常生效。
           if [[ "$PUSH_DELETED" == "true" || "$PUSH_AFTER_SHA" == "$all_zero_sha" ]]; then
             echo "No commit to check for this push event."
             exit 0
@@ -40,7 +42,7 @@ jobs:
 
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             bash scripts/check-commit-attribution.sh \
-              --range "$PR_BASE_SHA..$PR_HEAD_SHA"
+              --range "$PR_BASE_SHA..$PR_HEAD_SHA" --governance
           elif [[ "$PUSH_BEFORE_SHA" == "$all_zero_sha" ]]; then
             command -v jq >/dev/null 2>&1 || { echo "jq is required for a new-branch push check." >&2; exit 1; }
             push_commit_count="$(jq -r '(.commits // []) | length' "$GITHUB_EVENT_PATH")"
@@ -54,13 +56,13 @@ jobs:
               [[ -z "$commit" ]] && continue
               if git rev-parse "$commit^" >/dev/null 2>&1; then
                 bash scripts/check-commit-attribution.sh \
-                  --range "$commit^..$commit"
+                  --range "$commit^..$commit" --governance
               else
                 bash scripts/check-commit-attribution.sh \
-                  --commit "$commit"
+                  --commit "$commit" --governance
               fi
             done <<< "$push_commits"
           else
             bash scripts/check-commit-attribution.sh \
-              --range "$PUSH_BEFORE_SHA..$PUSH_AFTER_SHA"
+              --range "$PUSH_BEFORE_SHA..$PUSH_AFTER_SHA" --governance
           fi

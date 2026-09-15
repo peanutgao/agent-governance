@@ -2,9 +2,9 @@
 
 > 用途：将本 Prompt 交给 AI Coding Agent，用于处理新需求、需求变更、Bug 修复和后续实现。
 >
-> 可按需使用当前环境可用的需求澄清、诊断、设计、计划和实现 Skill。Superpowers 是可选的工程能力集合，不是所有任务的固定前置步骤。
+> 可按需使用当前环境可用的需求澄清、诊断、设计、计划和实现 Skill。这类工程流程 Skill 是可选的流程工具，不是所有任务的固定前置步骤。
 >
-> `ask-grill` / `grill-me` 是需求澄清入口，当前常见实现为 `grilling`；用户所说的 `grilling-me` 统一按此能力处理。交互统一遵守「一次只问一个问题」：提问前附带当前情景、已知信息、影响和 AI 建议；等待用户回答；下一问题必须参考并核验上一回答。若 Skill 默认一次列出多个问题，以本规则为准。
+> 需求澄清能力在本 Prompt 中统一称 `grilling`；`grill-me` / `grilling-me` / `ask-grill` 均指同一能力。交互统一遵守「一次只问一个问题」：提问前附带当前情景、已知信息、影响和 AI 建议；等待用户回答；下一问题必须参考并核验上一回答。若 Skill 默认一次列出多个问题，以本规则为准。
 >
 > 本 Prompt 的最高原则：**Skill 是流程工具，Spec 才是业务真相。**
 
@@ -113,7 +113,7 @@ I. Non-behavioral Change
 
 关键不确定性必须先区分是“需要用户决定的业务问题”，还是“AI 可以自行查证的工程问题”：
 
-- 业务目标、正确行为、验收条件、范围、失败行为或用户取舍未确定时，必须 `STOP implementation`，进入 `grill-me` / `grilling`，逐问取得决定；未确认前不得猜测落地。
+- 业务目标、正确行为、验收条件、范围、失败行为或用户取舍未确定时，必须 `STOP implementation`，进入 `grilling`，逐问取得决定；未确认前不得猜测落地。
 - 仅技术根因、代码路径或实现细节未确定时，AI 应先通过代码、文档、复现、工具和证据自行调查；非显然、间歇性、跨模块或高风险问题按需进入深度诊断，不因技术不确定性自动等待用户。
 - 设计方案不唯一时，AI 先比较方案及其影响；只有方案会改变业务行为、范围、风险接受或需要用户取舍时，才暂停并询问用户。
 
@@ -137,7 +137,7 @@ Skill 路由：
 
 | 不确定内容 | 使用流程 |
 |---|---|
-| 不清楚应该实现什么、正确行为、验收条件、边界或失败行为 | `grill-me` / `grilling` |
+| 不清楚应该实现什么、正确行为、验收条件、边界或失败行为 | `grilling` |
 | 正确行为已经明确，但非显然、间歇性、跨模块或高风险的技术根因不明 | `diagnosing-bugs` 或等价的深度诊断 |
 | 目标明确，但存在多个合理的实现、设计或架构方案 | design / brainstorming |
 | 方案已经确定，但任务复杂、涉及多个步骤或多个模块 | plan / writing-plans |
@@ -158,7 +158,7 @@ Skill 路由：
 
 提问前先由 AI 查清可以通过代码、项目文档、复现和工具确认的事实；只把必须由用户决定的业务目标、取舍或范围问题交给用户。
 
-`grill-me` / `grilling` 只负责发现假设、暴露缺口和推动决策，不负责把自己的建议变成业务真相。用户确认后，行为变化写入适合的项目 Spec、Design、Plan 或任务记录；简单局部任务不为了记录而新建文档。
+`grilling` 只负责发现假设、暴露缺口和推动决策，不负责把自己的建议变成业务真相。用户确认后，行为变化写入适合的项目 Spec、Design、Plan 或任务记录；简单局部任务不为了记录而新建文档。
 
 ### Independent evidence check and respectful challenge
 
@@ -215,7 +215,7 @@ Skill 是流程工具，不是硬依赖。当前环境没有对应 Skill 时，�
 
 ### Phase B — Clarify
 
-如果以下内容存在未决、矛盾或多个合理解释，应按 §3.1 使用 `grill-me` / `grilling` 或等价的 requirement interrogation：
+如果以下内容存在未决、矛盾或多个合理解释，应按 §3.1 使用 `grilling` 或等价的 requirement interrogation：
 
 - 业务规则
 - 权限
@@ -233,7 +233,7 @@ Skill 是流程工具，不是硬依赖。当前环境没有对应 Skill 时，�
 
 澄清采用 §3.1 的交互格式：每次先说明情景、影响和 AI 建议，再只问一个问题；等待用户回答后，下一问题必须基于上一个回答继续。直到完全理解业务与需求后再实施；禁止一次性抛出一堆问题，禁止在未理解时猜测或擅自推进。
 
-`ask-grill` / `grill-me` / `grilling` 只负责：
+`grilling` 只负责：
 
 ```text
 Discover
@@ -242,7 +242,7 @@ Expose assumptions
 Identify missing cases
 ```
 
-ask-grill 的输出不是正式业务真相。
+`grilling` 的输出不是正式业务真相。
 
 必须经过：
 
@@ -370,7 +370,8 @@ Perform systematic adversarial review of the affected paths
 
 - 普通修复窗口只做自己的局部验证，不自动触发共享项目的完整 build、test 或 run。
 - 完整项目验证只有在用户明确要求，或项目规则/风险等级明确要求时才运行。
-- 同一工作树不得并发启动同一个项目的 build、test 或 run。
+- 同一工作树不得并发启动同一个项目的 build、test 或 run。启动前先取锁：用 `flock` 包住命令，或在工作树内原子创建锁文件（`mkdir` 或 `set -C` 重定向）；取不到锁就说明已有验证在跑，本次标记 `deferred`，不重复重试。
+- 锁超过 30 分钟视为失效，可以接管，但必须在报告中写明接管依据；正常结束时必须释放锁，不留死锁。
 - 已有验证正在运行时，其他窗口将本次验证标记为 `deferred`，不重复重试。
 - 不得根据当前窗口的完成状态推断其他窗口已经完成；最终完整验证需要用户明确触发，或由项目规则明确触发。
 - `deferred` 表示验证尚未执行，不是通过；如果完整项目验证是本任务或项目规则的完成条件，`deferred` 时不得宣称项目完成，只能报告代码/局部任务完成和剩余验证。
@@ -399,7 +400,7 @@ Reclassify as Requirement Change
       ↓
 Create Change Proposal
       ↓
-Clarify / grill-me / grilling
+Clarify / grilling
       ↓
 Decision
       ↓
@@ -654,9 +655,9 @@ docs/adr/
 
 只有在用户确认了目标行为或架构/合同决策后，才允许把内容写入 Spec 或 ADR。未收敛的内容继续留在 grilling / Change Proposal / brainstorm 流程中。
 
-## 14. SUPERPOWERS BOUNDARY
+## 14. ENGINEERING SKILL BOUNDARY
 
-Superpowers 或其他 Engineering Skill 是可选的流程工具，只有在 §3.1 的路由判断需要时才使用。它们的职责是：
+工程流程 Skill 是可选的流程工具，只有在 §3.1 的路由判断需要时才使用。它们的职责是：
 
 ```text
 Design
@@ -669,17 +670,9 @@ Verification
 
 它不能擅自修改已批准业务需求，也不能替用户决定未定义的业务行为。
 
-使用顺序遵守：
+路由判断与 Skill 选择只有一处正文：§3.1 的「Skill 路由」表。本节不再复制该表，避免多处维护后互相漂移；需要判断时回到 §3.1。
 
-```text
-正确性 / 需求不明确  →  grill-me / grilling
-正确性明确、技术根因复杂 → diagnosing-bugs
-方案不唯一            → design / brainstorming
-方案已定、执行复杂      → plan / writing-plans
-方案已定、改动局部      → 直接实现
-```
-
-当前环境没有对应的 Superpowers 或其他 Skill 时，执行等价的最小流程，不伪造 Skill 调用。简单且明确的任务不得因为 Skill 不可用而阻塞；关键业务决定未确认时不得继续猜测实现。
+当前环境没有对应的 Skill 时，执行等价的最小流程，不伪造 Skill 调用。简单且明确的任务不得因为 Skill 不可用而阻塞；关键业务决定未确认时不得继续猜测实现。
 
 如果在 Design / Plan / Implementation / Test 阶段发现：
 
@@ -913,7 +906,7 @@ PR 是 Open / Closed / Merged
 
 ## 17. TESTING
 
-如果本次改动选择运行测试，测试必须验证适用于本次改动的：
+本次改动已判定适用的测试必须实际运行（见 §16.2「已选定的验证项必须自动验证」），不适用的类别按 `N/A` 说明理由。测试必须验证适用于本次改动的：
 
 ```text
 Approved behavior
@@ -1099,7 +1092,25 @@ Coauthor:
 
 历史提交不重写；本规则只阻止新的 AI 信息披露，不要求也不声称历史提交不存在 AI 参与。
 
-`Governance-Exception: ...` 尾注是 owner 审批记录，不受本禁令影响。拦截清单与执行细节以 agent-governance 的 `scripts/check-commit-attribution.sh` 为准。
+`Governance-Exception: ...` 尾注是 owner 审批记录：它**只**豁免上面的 trailer 清单，不豁免身份检查，也不豁免 message 披露短语检查。
+
+检查分三层，拦截清单与正则以 `~/.codex/check-commit-attribution.sh --print-policy` 为准：
+
+```text
+1. co-author trailer        —— message 里的合作作者归属声明
+2. identity                 —— author / committer 出现 AI 或自动化身份
+3. message 披露短语          —— message 正文的「AI 参与」明确表述
+```
+
+message 层只拦披露短语，不拦裸词：`ai` / `agent` / `assistant` / `bot` 这类词在产品功能名和通用英文里大量出现，整词拦截会拦下合法提交（例如「修复 AI 模块的空指针」「增加 ai 摘要」），逼人改写 commit message 绕开词表，规则反而失效。
+
+治理仓自身用于定义本政策的提交，用 `--governance` 模式运行检查（跳过第 3 层，保留第 1、2 层）：
+
+```bash
+~/.codex/check-commit-attribution.sh --message <file> --governance
+```
+
+项目仓库要启用同等检查时，把 `~/.codex/check-commit-attribution.sh` 复制进项目仓库，并接上 `commit-msg` hook 与 CI；本仓不替项目安装 hook。
 
 ## 22. EXECUTION SUMMARY FORMAT
 
@@ -1148,9 +1159,9 @@ Remaining Risks: ...
 
 3. Never treat passing tests as proof that the product requirement is correct.
 
-4. Never let ask-grill output automatically become Spec.
+4. Never let grilling output automatically become Spec.
 
-5. Never let Superpowers or implementation convenience redefine approved business behavior.
+5. Never let an engineering Skill or implementation convenience redefine approved business behavior.
 
 6. If business behavior is undefined, stop implementation and enter requirement discovery.
 
@@ -1223,7 +1234,7 @@ Correctness / expected behavior / acceptance clear?
 
 NO → STOP implementation
       → Identify the uncertainty type
-      → §3.1 grill-me / grilling, one question at a time
+      → §3.1 grilling, one question at a time
       → Include scenario, impact, and AI recommendation
       → Wait for the answer and base the next question on it
       → Record the decision
@@ -1246,6 +1257,7 @@ Multiple local fixes in one project/worktree?
 
 YES → Each fix uses local targeted checks
       → Do not auto-run shared project build / test / run
+      → Take the worktree lock before any build / test / run; release it when done
       → Each fix still requires local root-cause understanding and adversarial review
       → Final full validation only when explicitly required
       → No concurrent build / test / run
@@ -1253,25 +1265,8 @@ YES → Each fix uses local targeted checks
 
 Otherwise continue with the full flow:
 
-Need a business or behavior decision?
-
-YES → §3.1 grill-me / grilling / requirement discovery
-NO  → continue
-
-Is the technical root cause non-obvious, intermittent, cross-module, or high-risk?
-
-YES → diagnosing-bugs or equivalent deep diagnosis
-NO  → continue
-
-Are there multiple reasonable design or architecture options?
-
-YES → design / brainstorming
-NO  → continue
-
-Is the approved work complex enough to need decomposition?
-
-YES → plan / writing-plans
-NO  → implement directly
+Routing and Skill selection are defined once, in the §3.1 route table.
+Apply that table; do not maintain a second copy here.
 
         ↓
 

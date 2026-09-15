@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 治理仓自身用 --governance 模式：本仓的提交需要描述「AI 归属」这件事本身。
+# 该模式只跳过 message 披露短语检查，co-author trailer 与身份检查照常生效。
 repo_root="$(git rev-parse --show-toplevel)"
-exec bash "$repo_root/scripts/check-commit-attribution.sh" --message "$1"
+exec bash "$repo_root/scripts/check-commit-attribution.sh" --message "$1" --governance
