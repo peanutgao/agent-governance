@@ -75,6 +75,10 @@ write_message coauthor.txt $'docs: update governance\n\nCoauthor: Agent <agent@e
 write_message co-author-underscore.txt $'docs: update governance\n\nCo_Authored_By: Bot <bot@example.invalid>'
 write_message co-author-spaces.txt $'docs: update governance\n\nCo Authored By: Agent <agent@example.invalid>'
 write_message governance-exception.txt $'docs: update governance\n\nGovernance-Exception: docs | approved-by=@Joseph | reason=owner review'
+write_message message-ai-disclosure.txt 'chore: AI-assisted implementation'
+write_message message-agent-disclosure.txt 'chore: update coding agent workflow'
+write_message message-generated-disclosure.txt 'chore: generated-by assistant'
+write_message message-data-model.txt 'refactor: update data model mapping'
 
 expect_success message-human --message "$TEST_ROOT/human.txt"
 expect_failure_code message-co-authored-by 1 "$CHECKER" --message "$TEST_ROOT/co-authored-by.txt"
@@ -84,13 +88,17 @@ expect_failure_code message-coauthor 1 "$CHECKER" --message "$TEST_ROOT/coauthor
 expect_failure_code message-co-author-underscore 1 "$CHECKER" --message "$TEST_ROOT/co-author-underscore.txt"
 expect_failure_code message-co-author-spaces 1 "$CHECKER" --message "$TEST_ROOT/co-author-spaces.txt"
 expect_success message-governance-exception --message "$TEST_ROOT/governance-exception.txt"
+expect_failure_code message-ai-disclosure 1 "$CHECKER" --message "$TEST_ROOT/message-ai-disclosure.txt"
+expect_failure_code message-agent-disclosure 1 "$CHECKER" --message "$TEST_ROOT/message-agent-disclosure.txt"
+expect_failure_code message-generated-disclosure 1 "$CHECKER" --message "$TEST_ROOT/message-generated-disclosure.txt"
+expect_success message-data-model --message "$TEST_ROOT/message-data-model.txt"
 expect_failure_code message-missing-file 2 "$CHECKER" --message "$TEST_ROOT/missing.txt"
 expect_failure_code current-ai-author 1 env GIT_AUTHOR_NAME=Claude GIT_AUTHOR_EMAIL=noreply@anthropic.com "$CHECKER" --message "$TEST_ROOT/human.txt"
 expect_failure_code current-ai-claudecode 1 env GIT_AUTHOR_NAME=ClaudeCode GIT_AUTHOR_EMAIL=claude-code@example.invalid "$CHECKER" --message "$TEST_ROOT/human.txt"
 expect_failure_code current-ai-committer 1 env GIT_COMMITTER_NAME=CommandCodeBot GIT_COMMITTER_EMAIL=noreply@commandcode.ai "$CHECKER" --message "$TEST_ROOT/human.txt"
 expect_failure_code current-github-actions-committer 1 env GIT_COMMITTER_NAME='github-actions[bot]' GIT_COMMITTER_EMAIL=actions@example.invalid "$CHECKER" --message "$TEST_ROOT/human.txt"
-expect_env_success current-human-agent-name env GIT_AUTHOR_NAME='Agent Smith' GIT_AUTHOR_EMAIL=smith@example.invalid "$CHECKER" --message "$TEST_ROOT/human.txt"
-expect_env_success current-human-bot-email env GIT_AUTHOR_EMAIL='bot-service@acme.com' "$CHECKER" --message "$TEST_ROOT/human.txt"
+expect_failure_code current-human-agent-name 1 env GIT_AUTHOR_NAME='Agent Smith' GIT_AUTHOR_EMAIL=smith@example.invalid "$CHECKER" --message "$TEST_ROOT/human.txt"
+expect_failure_code current-human-bot-email 1 env GIT_AUTHOR_EMAIL='bot-service@acme.com' "$CHECKER" --message "$TEST_ROOT/human.txt"
 
 git -C "$REPO" commit --allow-empty -q -m "chore: baseline"
 base_commit="$(git -C "$REPO" rev-parse HEAD)"

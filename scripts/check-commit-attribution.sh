@@ -3,7 +3,7 @@ set -euo pipefail
 
 # check-commit-attribution.sh
 #
-# 检查 Git commit 是否把 AI、模型、Agent 或 Bot 写入作者归属信息。
+# 检查新的 Git commit 和提交身份是否披露 AI、模型、Agent 或 Bot 信息。
 # 该脚本只读 message/commit metadata，不自动改写提交、Git 配置或历史。
 #
 # 注意：--audit-history 会对政策生效前（含 Co-Authored-By 的旧 commit）报红，这是
@@ -19,8 +19,9 @@ usage() {
 USAGE
 }
 
-# 身份与域名清单：变更须同步 templates/project/scripts/check-commit-attribution.sh 与 templates/project/AI-GOVERNANCE.md §14。
-KNOWN_AI_IDENTITY_REGEX='(^|[^[:alnum:]])(claude|claudecode|gpt|chatgpt|openai|anthropic|codex|copilot|cursor|codeium|gemini|commandcode|commandcodebot|github-actions|dependabot|renovate|gitlab-ci|jenkins|circleci|buildkite|aider|windsurf|replit)([^[:alnum:]]|$)|(^|[^[:alnum:]])(anthropic\.com|openai\.com|commandcode\.ai)([^[:alnum:]]|$)'
+# 新的项目交付物和协作记录不得披露 AI 信息；匹配大小写不敏感。
+# 不把普通 data model 误判为 AI 信息，只匹配 AI/LLM/语言模型及常见工具或身份。
+FORBIDDEN_AI_DISCLOSURE_REGEX='(^|[^[:alnum:]])(ai|a[[:space:]_.-]*i|人工智能|artificial[[:space:]_.-]+intelligence|llm|large[[:space:]_.-]+language[[:space:]_.-]+model|chatgpt|gpt|openai|anthropic|claude|claudecode|codex|copilot|cursor|codeium|gemini|deepseek|qwen|mistral|minimax|aider|windsurf|replit|agent|subagent|agentic|bot|assistant|superpowers|generated[[:space:]_.-]+by|machine[[:space:]_.-]+generated|anthropic\.com|openai\.com|commandcode\.ai)([^[:alnum:]]|$)'
 CO_AUTHOR_TRAILER_REGEX='^[[:space:]]*co[[:space:]_.-]*author(ed)?[[:space:]_.-]*(by)?[[:space:]]*:'
 
 violations=0
@@ -38,6 +39,9 @@ check_message_text() {
   if printf '%s\n' "$message" | LC_ALL=C grep -Eiq "$CO_AUTHOR_TRAILER_REGEX"; then
     report_violation "$location" "co-author trailer"
   fi
+  if printf '%s\n' "$message" | LC_ALL=C grep -Eiq "$FORBIDDEN_AI_DISCLOSURE_REGEX"; then
+    report_violation "$location" "AI information disclosure"
+  fi
 }
 
 check_message_file() {
@@ -52,8 +56,8 @@ check_message_file() {
 check_identity() {
   local location="$1"
   local identity="$2"
-  if printf '%s\n' "$identity" | LC_ALL=C grep -Eiq "$KNOWN_AI_IDENTITY_REGEX"; then
-    report_violation "$location" "known AI/Bot identity"
+  if printf '%s\n' "$identity" | LC_ALL=C grep -Eiq "$FORBIDDEN_AI_DISCLOSURE_REGEX"; then
+    report_violation "$location" "AI information disclosure in identity"
   fi
 }
 

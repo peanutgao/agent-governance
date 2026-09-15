@@ -3,7 +3,7 @@
 #
 # 用法: bash scripts/check-version-bump.sh
 #
-# 规则文件（global/、templates/project/、.github/、.githooks/、team-contract.md 与公共检查脚本）一旦变更，VERSION 必须在同一次或更晚的
+# 规则文件（global/、.github/、.githooks/、README.md、onboarding.md 与公共检查脚本）一旦变更，VERSION 必须在同一次或更晚的
 # 提交里 bump，否则各成员的 .gov-version 不变、distribute.sh 会显示「已是最新」，
 # 新规则悄悄地发不下去。本脚本纯本地 git，不依赖 remote。
 set -euo pipefail
@@ -13,15 +13,13 @@ cd "$REPO_DIR"
 
 RULE_PATHS=(
   global
-  templates/project
   .github
   .githooks
   README.md
   onboarding.md
   scripts/check-commit-attribution.sh
-  scripts/sync-project-governance.sh
+  scripts/distribute.sh
   scripts/check-version-bump.sh
-  team-contract.md
 )
 
 # --- 1. 工作区必须干净：分发的是工作区内容，未提交的规则不该下发给团队 ---

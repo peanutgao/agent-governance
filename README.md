@@ -1,44 +1,49 @@
-# agent-governance — 团队 AI 治理仓
+# agent-governance — 个人多设备 AI 开发约束
 
-全局 AI 约束的唯一真源，经 `scripts/distribute.sh` 下发到每位开发者电脑。
-项目级约束在各项目 git（AGENTS.md / specs / docs/agent）。
+个人跨设备共享的全局 AI 开发约束仓库。每台设备拉取本仓后执行 `scripts/distribute.sh`，更新本机的全局 AI 约束。
+
+项目级约束、架构、Spec、Contract、测试和发布说明由各项目仓库自己维护。本仓库不收集项目代码，也不替项目维护项目级 AI 约束。
 
 ## 结构
 
-```
+```text
 global/
-├── AGENTS.md                          # 语言无关过程基线（所有项目通用）
-└── ai-change-implementation-prompt.md # SDD 全文
-templates/project/                     # 项目快照与检查脚本唯一源模板
-team-contract.md                       # 团队契约：角色 / AI 禁改区 / AI 改动守则 / 规则变更流程
-onboarding.md                          # 新成员从零到第一个 PR
+├── AGENTS.md                          # 个人全局通用约束
+└── ai-change-implementation-prompt.md # 复杂任务按需读取的详细流程
+onboarding.md                          # 多设备初始化和更新
 scripts/distribute.sh                  # 分发（支持 --rollback）
-scripts/sync-project-governance.sh     # 同步到独立项目仓库
-scripts/check-version-bump.sh          # 规则改了没 bump VERSION 就拦下
-VERSION                                # 基线版本号（语义化，规则变更后 bump）
+scripts/check-commit-attribution.sh    # 治理仓 commit 归属检查
+scripts/check-version-bump.sh          # 规则改动检查
+VERSION                                # 基线版本号
 ```
 
-> 团队共享的钩子/权限**不在这里**，放各项目的 `.claude/settings.json`（进项目 git，
-> 天然走 PR 评审、只对该项目生效）。`~/.claude/settings.json` 是个人层，分发脚本不碰。
+> 本仓只分发个人全局规则，不分发项目设置、项目 hook、权限、token 或个人 memory。
+> `~/.claude/settings.json`、`settings.local.json` 和其他本机配置由个人自行维护，分发脚本不碰。
 
-## 规则变更流程
+## 修改全局约束
 
-1. 开分支 → 改 `global/`、`templates/project/` 或 `team-contract.md` → 提 PR
-2. 至少 1 名 reviewer 批准（**规则变更不可自行合并**）
-3. **bump `VERSION`**（语义化版本）——忘了会被 `check-version-bump.sh` 拦下
-4. 各成员跑 `bash scripts/distribute.sh` 更新本机
+1. 修改 `global/`、分发脚本或相关检查脚本。
+2. **bump `VERSION`**（语义化版本）。
+3. 运行语法、测试和 `git diff --check`。
+4. 提交并推送；其他设备执行 `git pull` 和 `bash scripts/distribute.sh`。
 
-## 分发
+## 分发到设备
 
 ```bash
 bash scripts/distribute.sh
 ```
 
-分发前门禁：规则文件无未提交改动 → VERSION 已 bump → 本地仓不落后 origin。
-安装到 `~/.codex/AGENTS.md`（`~/.claude/CLAUDE.md` 软链接指向同一文件）。
-内容一致时跳过，不产生冗余备份；覆盖前自动备份为 `~/.codex/AGENTS.md.bak-<时间戳>`。
+分发前门禁：规则文件无未提交改动 → VERSION 已更新 → 本地仓不落后 origin。
 
-Git 提交禁止出现 AI、模型、Agent 或 Bot 的 author/committer 身份，也禁止任何合作作者 trailer（含等价变体）。AI 参与只在 PR、Issue 或任务总结中披露。
+安装到：
+
+- `~/.codex/AGENTS.md`；
+- `~/.codex/ai-change-implementation-prompt.md`；
+- `~/.claude/CLAUDE.md` 软链接到 `~/.codex/AGENTS.md`。
+
+内容一致时跳过，不产生冗余备份；覆盖前自动备份为 `~/.codex/*.bak-<时间戳>`。
+
+项目交付物和 Git/协作记录不得披露 AI 参与、模型、供应商、Agent、Bot、生成归属或类似自动化身份信息；历史提交不重写。治理仓规则源可以使用必要的治理术语来定义这条约束。
 
 回滚到最近一次备份：
 
@@ -46,20 +51,22 @@ Git 提交禁止出现 AI、模型、Agent 或 Bot 的 author/committer 身份�
 bash scripts/distribute.sh --rollback
 ```
 
-## 项目仓库快照
+## 项目级 AI 约束
 
-业务项目不需要把代码提交到本治理仓库。每个业务仓库提交自己的 AI-GOVERNANCE.md 和检查脚本快照；公共内容由本仓库维护，再通过同步脚本更新。
+每个项目仓库维护自己的项目级 AI 约束，通常放在项目根目录的 `AGENTS.md` 或 `CLAUDE.md`，并与项目自己的 Spec、架构文档和测试说明一起演进。
 
-~~~bash
-bash scripts/sync-project-governance.sh \
-  --repo /path/to/hengqin-backend \
-  --repo /path/to/hengqin-desktop \
-  --repo /path/to/hengqin-admin
-~~~
+项目级文件负责项目专属内容，例如技术栈、目录、构建命令、模块边界、业务规则和发布流程；不要把这些内容写进本仓的全局规则。
 
-同步脚本只写目标仓库的 AI-GOVERNANCE.md 和 scripts/check-commit-attribution.sh，发现目标文件有未提交修改时拒绝覆盖，不会读取、移动或提交项目源代码。
+本仓不复制或覆盖任何项目仓库文件。
 
-## 团队契约
+## 设备更新
 
-角色定义、AI 禁改区（含当前强制力的真实状况）、AI 改动守则、spec 模型见
-[`team-contract.md`](team-contract.md)。新成员先读 [`onboarding.md`](onboarding.md)。
+新设备或已有设备都执行：
+
+```bash
+cd agent-governance
+git pull --ff-only
+bash scripts/distribute.sh
+```
+
+首次使用见 [`onboarding.md`](onboarding.md)。本仓的 `docs/` 只保存治理仓自己的研究和历史资料，不属于本机全局规则自动加载内容。

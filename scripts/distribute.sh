@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# distribute.sh — agent-governance 全局基线分发脚本
+# distribute.sh — agent-governance 个人全局基线分发脚本
 #
 # 用法:
 #   bash scripts/distribute.sh            # 分发
@@ -8,7 +8,7 @@
 # 行为:
 #   1. 门禁：规则文件无未提交改动、VERSION 已 bump（scripts/check-version-bump.sh）
 #   2. 门禁：本地仓不落后 origin（有 remote 时）——否则会把旧规则装成「最新」
-#   3. 安装 global/AGENTS.md → ~/.codex/AGENTS.md，SDD 全文 → ~/.codex/ai-change-implementation-prompt.md
+#   3. 安装 global/AGENTS.md → ~/.codex/AGENTS.md，详细流程 → ~/.codex/ai-change-implementation-prompt.md
 #      内容一致时跳过（不产生冗余备份）；内容不一致时先备份再覆盖
 #   4. 维护 ~/.claude/CLAUDE.md 软链接 → ~/.codex/AGENTS.md（普通文件则先备份）
 #   5. 版本提示：输出「最新版本 / 本机已装版本」
@@ -64,14 +64,14 @@ if git -C "$REPO_DIR" remote get-url origin >/dev/null 2>&1; then
     echo "    ⚠️ 无法 fetch origin（网络或权限），本次分发的是本地内容。"
   fi
 else
-  echo "    ⚠️ 治理仓尚未配置 origin remote——当前只能分发本机内容，团队拿不到。"
+    echo "    ⚠️ 治理仓尚未配置 origin remote——当前只能分发本机内容。"
 fi
 
 LATEST="$(tr -d '[:space:]' < "$VERSION_FILE")"
 INSTALLED=""
 [[ -f "$PREFIX/.gov-version" ]] && INSTALLED="$(tr -d '[:space:]' < "$PREFIX/.gov-version")"
 
-echo "==> agent-governance 全局基线分发"
+echo "==> agent-governance 个人全局基线分发"
 echo "    最新版本: ${LATEST}"
 [[ -n "$INSTALLED" ]] && echo "    本机已装: ${INSTALLED}"
 
@@ -88,7 +88,7 @@ for f in "${FILES[@]}"; do
     cp "$PREFIX/$f" "$PREFIX/$f.bak-$ts"
     if [[ "$INSTALLED" == "$LATEST" ]]; then
       echo "    ⚠️ $f 与基线不一致但版本号相同——本机副本被手工改过，已备份为 $f.bak-$ts"
-      echo "       （规则改动必须走治理仓 PR，本机副本会被覆盖）"
+      echo "       （规则改动请回到治理仓修改源文件，本机副本会被覆盖）"
     else
       echo "    已备份: $f.bak-$ts"
     fi
