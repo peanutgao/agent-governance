@@ -175,6 +175,7 @@ expect_symlink_to link-pi "$canonical" "$targets_home/.pi/agent/AGENTS.md"
 expect_symlink_to link-opencode "$canonical" "$targets_home/.config/opencode/AGENTS.md"
 expect_symlink_to link-dsh "$canonical" "$targets_home/.dsh/AGENTS.md"
 expect_symlink_to link-commandcode "$canonical" "$targets_home/.commandcode/AGENTS.md"
+expect_symlink_to link-omp "$canonical" "$targets_home/.omp/agent/AGENTS.md"
 
 workbuddy_rule="$targets_home/.workbuddy-ai/rules/agent-governance.md"
 if [[ -f "$workbuddy_rule" ]] && grep -q '^alwaysApply: true$' "$workbuddy_rule"; then

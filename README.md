@@ -35,6 +35,7 @@ VERSION                                # 基线版本号
 | opencode | `~/.config/opencode/AGENTS.md` | 软链 |
 | DeepSeek Harness | `$DSH_HOME/AGENTS.md`（默认 `~/.dsh/AGENTS.md`） | 软链 |
 | commandcode | `~/.commandcode/AGENTS.md` | 软链 |
+| omp | `~/.omp/agent/AGENTS.md` | 软链 |
 | WorkBuddy | `~/.workbuddy-ai/rules/agent-governance.md` | 生成文件（带 frontmatter） |
 
 WorkBuddy 需要单独处理：它的用户级规则是 `<configDir>/rules/*.md`，必须带 `alwaysApply` frontmatter 才会全量注入，且正文上限 40000 字符（超限会被静默丢弃，因此分发前先校验长度）。它的工作区级入口是项目根目录的 `AGENTS.md` / `CODEBUDDY.md` / `.codebuddy/CODEBUDDY.md` 以及 `.codebuddy/rules/*.md`。本仓不分发项目级文件，只在**自己**根目录放一个 `AGENTS.md` 软链（见上）。

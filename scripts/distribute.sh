@@ -46,6 +46,7 @@ resolve_target_dir() {
 }
 
 PI_AGENT_DIR="$HOME/.pi/agent"
+OMP_AGENT_DIR="$HOME/.omp/agent"
 OPENCODE_DIR="$HOME/.config/opencode"
 COMMANDCODE_DIR="$HOME/.commandcode"
 DSH_DIR="$(resolve_target_dir "${DSH_HOME:-}" "$HOME/.dsh" "DSH_HOME")"
@@ -65,6 +66,7 @@ COPY_SOURCES=(
 LINK_TARGETS=(
   "$HOME/.claude/CLAUDE.md|Claude Code"
   "$PI_AGENT_DIR/AGENTS.md|pi"
+  "$OMP_AGENT_DIR/AGENTS.md|omp"
   "$OPENCODE_DIR/AGENTS.md|opencode"
   "$DSH_DIR/AGENTS.md|DeepSeek Harness"
   "$COMMANDCODE_DIR/AGENTS.md|commandcode"

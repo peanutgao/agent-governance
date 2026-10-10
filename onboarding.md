@@ -16,7 +16,7 @@ bash scripts/distribute.sh
 - `~/.codex/AGENTS.md`：全局通用 AI 开发约束；
 - `~/.codex/ai-change-implementation-prompt.md`：复杂任务按需读取的详细流程；
 - `~/.codex/check-commit-attribution.sh`：commit 归属检查器，可复制进项目仓库；
-- `~/.claude/CLAUDE.md`、`~/.pi/agent/AGENTS.md`、`~/.config/opencode/AGENTS.md`、`~/.dsh/AGENTS.md`、`~/.commandcode/AGENTS.md`：软链到真源；
+- `~/.claude/CLAUDE.md`、`~/.pi/agent/AGENTS.md`、`~/.config/opencode/AGENTS.md`、`~/.dsh/AGENTS.md`、`~/.commandcode/AGENTS.md`、`~/.omp/agent/AGENTS.md`：软链到真源；
 - `~/.workbuddy-ai/rules/agent-governance.md`：WorkBuddy 用户级规则（带 frontmatter，是生成文件不是软链）；
 - `~/.codex/.gov-version`：已安装版本号。
 

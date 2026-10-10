@@ -25,6 +25,7 @@
 ~/.config/opencode/AGENTS.md                # opencode（软链）
 ~/.dsh/AGENTS.md                            # DeepSeek Harness（软链）
 ~/.commandcode/AGENTS.md                    # commandcode（软链）
+~/.omp/agent/AGENTS.md                      # omp（软链）
 ~/.workbuddy-ai/rules/agent-governance.md   # WorkBuddy 用户级规则（带 frontmatter，非软链）
 ```
 
@@ -92,7 +93,7 @@ WorkBuddy 另有工作区级入口：项目根目录的 `AGENTS.md`、`CODEBUDDY
 - 写代码前先搜索项目已有的组件、Service、工具、Schema 和相似实现，优先复用。
 - 不要为了让测试变绿而偷偷改变需求或 Spec。
 - 不做未被要求的重构、依赖升级、格式化或清理。
-- 不保留死代码、空壳实现、调试输出或“以后再做”的未接通路径。
+- 不保留空壳实现、调试输出或“以后再做”的未接通路径。
 - 发现与当前目标无关的问题，记录后不要顺手扩大范围；安全、权限和数据正确性问题除外，应明确报告。
 
 ## Spec 与 ADR 目录约定
