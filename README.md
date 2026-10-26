@@ -10,7 +10,8 @@
 AGENTS.md                              # 软链 → global/AGENTS.md（本仓自身的工作区级入口）
 global/
 ├── AGENTS.md                          # 个人全局通用约束（唯一正文）
-└── ai-change-implementation-prompt.md # 复杂任务按需读取的详细流程
+├── ai-change-implementation-prompt.md # 复杂任务按需读取的详细流程
+└── git-hooks/                         # 全局 git 钩子（commit-msg 归属门禁 + 转发层）
 onboarding.md                          # 多设备初始化和更新
 scripts/distribute.sh                  # 分发（--rollback / --list-targets）
 scripts/check-commit-attribution.sh    # commit 归属检查（--governance / --print-policy）
@@ -30,6 +31,7 @@ VERSION                                # 基线版本号
 | Codex | `~/.codex/AGENTS.md` | 内容副本（真源） |
 | Codex | `~/.codex/ai-change-implementation-prompt.md` | 内容副本 |
 | Codex | `~/.codex/check-commit-attribution.sh` | 内容副本，可复制进项目仓库 |
+| 所有工具 | `~/.codex/git-hooks/`（`commit-msg` / `_chain` / `pre-commit` / `pre-push`） | 内容副本 + 可执行位 |
 | Claude Code | `~/.claude/CLAUDE.md` | 软链 |
 | pi | `~/.pi/agent/AGENTS.md` | 软链 |
 | opencode | `~/.config/opencode/AGENTS.md` | 软链 |
@@ -44,6 +46,18 @@ WorkBuddy 需要单独处理：它的用户级规则是 `<configDir>/rules/*.md`
 
 > 本仓只分发个人全局规则，不分发项目设置、项目 hook、权限、token 或个人 memory。
 > `~/.claude/settings.json`、`settings.local.json`、`~/.workbuddy-ai/{SOUL,IDENTITY,USER,MEMORY}.md` 和其他本机配置由个人自行维护，分发脚本不碰。
+
+## Git 归属的执行点
+
+规则文本不会自己拦提交。真正让「Git 归属」生效的是 `~/.codex/git-hooks/commit-msg`，分发脚本把它挂成全局 `core.hooksPath`（仅在本机尚未设置时写入，已有值不覆盖）：
+
+- 每次 `git commit` 先跑 `check-commit-attribution.sh`，`Co-Authored-By`、AI 身份、以及「由 AI 生成」类 message 一律拒绝；
+- 检查器缺失时**失败关闭**（拒绝提交），不静默放行；
+- `core.hooksPath` 是整体替换，所以 `commit-msg` / `pre-commit` / `pre-push` 都会先把控制权转回仓库自己的 `.git/hooks/<同名>`，项目原有 husky / lint 钩子不会被静默关掉；
+- 仓库自己设了 `core.hooksPath`（husky 等）时全局值不生效——这类仓库需要把 `~/.codex/git-hooks/commit-msg` 接进它自己的钩子链；
+- `--rollback` 只回滚文件，不动 git 配置；撤销挂载用 `git config --global --unset core.hooksPath`。
+
+治理仓自己不受这套全局钩子约束：它在本地把 `core.hooksPath` 指向 `.githooks`，用 `--governance` 模式描述本政策。
 
 ## 修改全局约束
 

@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# 链式转发：把控制权交回仓库 .git/hooks/<hook-name>。
+#
+# 背景：git 的 core.hooksPath 是整体替换，不是追加。全局钩子目录一旦生效，仓库
+# 自己的 .git/hooks 就不再被读取。转发型钩子（pre-commit / pre-push 等）用本脚本
+# 保住项目原有行为，否则「装了个归属检查」会静默废掉别人的 husky / lint 钩子。
+#
+# 用法: _chain <hook-name> [hook 参数...]
+# 仓库没有同名钩子时静默通过（退出 0）。
+set -uo pipefail
+
+hook_name="${1:-}"
+[[ -n "$hook_name" ]] || exit 0
+shift
+
+repo_common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+[[ -n "$repo_common_dir" ]] || exit 0
+case "$repo_common_dir" in
+  /*) ;;
+  *) repo_common_dir="$PWD/$repo_common_dir" ;;
+esac
+
+repo_hook="$repo_common_dir/hooks/$hook_name"
+[[ -f "$repo_hook" && -x "$repo_hook" ]] || exit 0
+
+self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_hook_dir="$(cd "$(dirname "$repo_hook")" 2>/dev/null && pwd || true)"
+[[ "$repo_hook_dir" == "$self_dir" ]] && exit 0
+
+exec "$repo_hook" "$@"

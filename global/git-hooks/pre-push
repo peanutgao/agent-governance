@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# 全局 pre-push：只做链式转发，不改变仓库原有行为。
+# 参数（remote 名、url）原样传给仓库自己的 .git/hooks/pre-push。
+set -uo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHAIN="$SELF_DIR/_chain"
+
+if [[ ! -f "$CHAIN" ]]; then
+  printf 'pre-push: 缺少转发脚本（%s），跳过仓库原有 pre-push。\n' "$CHAIN" >&2
+  exit 0
+fi
+
+exec bash "$CHAIN" pre-push "$@"

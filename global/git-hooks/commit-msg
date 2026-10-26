@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# 全局 commit-msg 钩子（由 scripts/distribute.sh 分发到 ~/.codex/git-hooks/）
+#
+# 两个职责：
+#   1. 归属检查：调用 check-commit-attribution.sh，拦下 AI 归属声明、AI 身份和
+#      「由 AI 生成」类 message。这是规则文本之外唯一的硬执行点——不管用哪个工具、
+#      哪条命令提交，git 都会先跑这里。
+#   2. 链式转发：core.hooksPath 生效后 Git 不再读仓库的 .git/hooks，这里手动把
+#      控制权交回仓库原有 commit-msg，避免全局钩子把项目自己的钩子静默顶掉。
+#
+# 治理仓自己用 .githooks/commit-msg + --governance 模式，不走这里（本地
+# core.hooksPath 会覆盖全局值）。
+set -uo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHECKER="$SELF_DIR/../check-commit-attribution.sh"
+[[ -f "$CHECKER" ]] || CHECKER="${HOME:-}/.codex/check-commit-attribution.sh"
+
+MESSAGE_FILE="${1:-}"
+
+if [[ ! -f "$CHECKER" ]]; then
+  printf 'commit-msg: 找不到归属检查器（%s）。\n' "$CHECKER" >&2
+  printf '           归属检查是硬门禁，检查器缺失时拒绝提交。\n' >&2
+  printf '           修复: 重新运行 agent-governance 的 scripts/distribute.sh。\n' >&2
+  exit 1
+fi
+
+if [[ -z "$MESSAGE_FILE" || ! -f "$MESSAGE_FILE" ]]; then
+  printf 'commit-msg: 未收到 commit message 文件路径，拒绝提交。\n' >&2
+  exit 1
+fi
+
+if ! bash "$CHECKER" --message "$MESSAGE_FILE" >/dev/null; then
+  printf '\n提交被 Git 归属约束拦下（见 ~/.codex/AGENTS.md「Git 归属」）。\n' >&2
+  printf '改法: 用人类开发者身份提交，并删掉 message 里的 AI 归属声明与「由 AI 生成」类表述。\n' >&2
+  printf '拦截清单: bash %s --print-policy\n' "$CHECKER" >&2
+  exit 1
+fi
+
+# --- 链式转发给仓库原有 commit-msg -----------------------------------------
+# 用 git-common-dir 覆盖 worktree 场景；相对路径按当前工作区解析。
+repo_common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+[[ -n "$repo_common_dir" ]] || exit 0
+case "$repo_common_dir" in
+  /*) ;;
+  *) repo_common_dir="$PWD/$repo_common_dir" ;;
+esac
+
+repo_hook="$repo_common_dir/hooks/commit-msg"
+[[ -f "$repo_hook" && -x "$repo_hook" ]] || exit 0
+
+# 防止自递归：仓库钩子指回本全局目录时不再转发。
+repo_hook_dir="$(cd "$(dirname "$repo_hook")" 2>/dev/null && pwd || true)"
+[[ "$repo_hook_dir" == "$SELF_DIR" ]] && exit 0
+
+exec "$repo_hook" "$@"

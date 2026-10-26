@@ -64,6 +64,10 @@ REPO="$TEST_ROOT/repo"
 git init -q "$REPO"
 git -C "$REPO" config user.name "Joseph Koh"
 git -C "$REPO" config user.email "joseph@example.com"
+# 隔离本机的全局 core.hooksPath：套件需要故意造出带 AI 身份 / 归属声明的提交来做
+# 断言，装了全局 commit-msg 钩子的开发机上这些提交会被拦下，夹具直接搭不起来。
+mkdir -p "$TEST_ROOT/empty-hooks"
+git -C "$REPO" config core.hooksPath "$TEST_ROOT/empty-hooks"
 
 write_message human.txt 'docs: update governance'
 write_message co-authored-by.txt $'docs: update governance\n\nCo-Authored-By: Claude <noreply@anthropic.com>'

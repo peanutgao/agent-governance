@@ -16,6 +16,7 @@ bash scripts/distribute.sh
 - `~/.codex/AGENTS.md`：全局通用 AI 开发约束；
 - `~/.codex/ai-change-implementation-prompt.md`：复杂任务按需读取的详细流程；
 - `~/.codex/check-commit-attribution.sh`：commit 归属检查器，可复制进项目仓库；
+- `~/.codex/git-hooks/`：全局 git 钩子（`commit-msg` 归属门禁 + `pre-commit` / `pre-push` 转发层），分发脚本会把它挂成全局 `core.hooksPath`（本机已有该配置时不覆盖）；
 - `~/.claude/CLAUDE.md`、`~/.pi/agent/AGENTS.md`、`~/.config/opencode/AGENTS.md`、`~/.dsh/AGENTS.md`、`~/.commandcode/AGENTS.md`、`~/.omp/agent/AGENTS.md`：软链到真源；
 - `~/.workbuddy-ai/rules/agent-governance.md`：WorkBuddy 用户级规则（带 frontmatter，是生成文件不是软链）；
 - `~/.codex/.gov-version`：已安装版本号。
@@ -49,6 +50,8 @@ bash scripts/distribute.sh --rollback      # 回到最近一次分发前的整�
 ```
 
 分发门禁包含「本地仓不落后 origin」：origin 存在但 fetch 失败会直接中止，不会把本地旧规则装成「已是最新」。
+
+`--rollback` 只回滚分发文件，不回滚 git 配置。撤销全局钩子挂载：`git config --global --unset core.hooksPath`；重新启用再跑一次 `bash scripts/distribute.sh`。
 
 ## 使用项目
 

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# 全局 pre-commit：只做链式转发，不改变仓库原有行为。
+# 本文件存在的意义是保住项目自己的 .git/hooks/pre-commit —— core.hooksPath 是整体
+# 替换，没有这个转发层，装归属检查就等于把别人的 lint / 格式化钩子静默关掉。
+set -uo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHAIN="$SELF_DIR/_chain"
+
+if [[ ! -f "$CHAIN" ]]; then
+  printf 'pre-commit: 缺少转发脚本（%s），跳过仓库原有 pre-commit。\n' "$CHAIN" >&2
+  exit 0
+fi
+
+exec bash "$CHAIN" pre-commit "$@"

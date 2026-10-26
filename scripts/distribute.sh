@@ -21,6 +21,7 @@ GLOBAL_DIR="$REPO_DIR/global"
 VERSION_FILE="$REPO_DIR/VERSION"
 PREFIX="$HOME/.codex"
 CANONICAL_AGENTS="$PREFIX/AGENTS.md"
+HOOKS_DIR="$PREFIX/git-hooks"
 BACKUP_ROOT="$PREFIX/.gov-backup"
 WORKBUDDY_RULE_NAME="agent-governance.md"
 
@@ -61,6 +62,10 @@ COPY_SOURCES=(
   "global/AGENTS.md|$PREFIX/AGENTS.md"
   "global/ai-change-implementation-prompt.md|$PREFIX/ai-change-implementation-prompt.md"
   "scripts/check-commit-attribution.sh|$PREFIX/check-commit-attribution.sh"
+  "global/git-hooks/commit-msg|$HOOKS_DIR/commit-msg"
+  "global/git-hooks/_chain|$HOOKS_DIR/_chain"
+  "global/git-hooks/pre-commit|$HOOKS_DIR/pre-commit"
+  "global/git-hooks/pre-push|$HOOKS_DIR/pre-push"
 )
 
 LINK_TARGETS=(
@@ -105,6 +110,7 @@ list_targets() {
   done
   printf '  workbuddy %s  ←  global/AGENTS.md + frontmatter\n' "$WORKBUDDY_RULE_PATH"
   printf '  state     %s  （版本记录，供门禁与回滚使用）\n' "$PREFIX/.gov-version"
+  printf '  githook   git config --global core.hooksPath %s（仅在本机未设置时写入）\n' "$HOOKS_DIR"
 }
 
 # --- 回滚 -----------------------------------------------------------------
@@ -159,6 +165,8 @@ rollback() {
     current_version="$(tr -d '[:space:]' <"$PREFIX/.gov-version")"
   fi
   printf '==> 回滚完成（快照 %s）。当前版本: %s\n' "$(basename "$latest")" "$current_version"
+  printf '    全局 git 配置不在快照范围内；如需撤销钩子挂载:\n'
+  printf '    git config --global --unset core.hooksPath\n'
   printf '    如需重新装到最新基线，再跑一次 bash scripts/distribute.sh。\n'
 }
 
@@ -170,6 +178,7 @@ run_local_checks() {
   local -a suites=(
     tests/check-commit-attribution.sh
     tests/check-hook.sh
+    tests/check-global-hook.sh
     tests/check-version-bump.sh
   )
 
@@ -225,6 +234,36 @@ check_remote_freshness() {
   fi
 
   return 0
+}
+
+# --- 全局 git 钩子挂载 -----------------------------------------------------
+# 规则文本本身不拦任何提交，check-commit-attribution.sh 只有在 git 调用它时才有
+# 作用。这里把 ~/.codex/git-hooks 挂成全局 core.hooksPath，让所有仓库的提交都先过
+# 归属检查。
+#
+# 只在自己没设过时才写：用户已有的 core.hooksPath（例如公司统一钩子目录）不覆盖，
+# 只提示怎么合并，避免为了装检查器改坏别人的钩子链。
+configure_global_hooks() {
+  local desired="$HOOKS_DIR"
+  local current
+
+  current="$(git config --global --get core.hooksPath 2>/dev/null || true)"
+  if [[ "$current" == "$desired" ]]; then
+    printf '    ✓ 全局 git 钩子已挂载: core.hooksPath=%s\n' "$desired"
+    return 0
+  fi
+  if [[ -n "$current" ]]; then
+    printf '    ⚠️ 已有全局 core.hooksPath=%s，本次不覆盖。\n' "$current" >&2
+    printf '       需要归属检查生效时，把 %s/commit-msg 接进现有钩子链。\n' "$desired" >&2
+    return 0
+  fi
+
+  if ! git config --global core.hooksPath "$desired" 2>/dev/null; then
+    printf '    ⚠️ 写入全局 core.hooksPath 失败，归属检查未生效。\n' >&2
+    printf '       手工执行: git config --global core.hooksPath %s\n' "$desired" >&2
+    return 0
+  fi
+  printf '    已挂载全局 git 钩子: core.hooksPath=%s\n' "$desired"
 }
 
 # --- 内容生成 -------------------------------------------------------------
@@ -322,6 +361,17 @@ main() {
   fi
 
   # --- 计算变更 ---
+  # 钩子文件丢了可执行位时先修好：cp 不保留模式，内容一致但不可执行的钩子会被 git
+  # 静默跳过，等于门禁悄悄失效。
+  local repair
+  for entry in "${COPY_SOURCES[@]}"; do
+    repair="${entry#*|}"
+    if [[ "$repair" == "$HOOKS_DIR/"* && -f "$repair" && ! -x "$repair" ]]; then
+      chmod +x "$repair"
+      printf '    已修复可执行位: %s\n' "$repair"
+    fi
+  done
+
   local -a plan_copy_src=() plan_copy_dest=() plan_link_dest=() plan_link_name=()
   local need_workbuddy=0
 
@@ -350,6 +400,7 @@ main() {
 
   if (( ${#plan_copy_dest[@]} == 0 && ${#plan_link_dest[@]} == 0 && need_workbuddy == 0 )) && [[ "$installed" == "$latest" ]]; then
     printf '==> 无需更新（已是 %s）。\n' "$latest"
+    configure_global_hooks
     printf '    settings.json / settings.local.json / 个人 memory / auth 属个人层，未被触碰。\n'
     return 0
   fi
@@ -367,6 +418,7 @@ main() {
     dest="${plan_copy_dest[$index]}"
     mkdir -p "$(dirname "$dest")"
     cp "${plan_copy_src[$index]}" "$dest"
+    [[ "$dest" == "$HOOKS_DIR/"* ]] && chmod +x "$dest"
     printf '    已安装: %s\n' "$dest"
   done
 
@@ -384,6 +436,8 @@ main() {
   fi
 
   printf '%s\n' "$latest" >"$PREFIX/.gov-version"
+
+  configure_global_hooks
 
   if [[ -n "$installed" && "$installed" == "$latest" ]]; then
     printf '    ⚠️ 受管副本与基线不一致但版本号相同——本机副本被手工改过，已快照。\n'

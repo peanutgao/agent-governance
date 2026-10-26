@@ -130,6 +130,14 @@ WorkBuddy 另有工作区级入口：项目根目录的 `AGENTS.md`、`CODEBUDDY
 - message 只拦披露短语，不拦裸词：产品功能名（如「AI 模块」「ai 摘要」）不应被拦截，也不应为了绕过词表而改写 commit message。
 - 历史提交不重写；只阻止新的 AI 信息披露，不把“未披露”误写成“未使用”。
 
+### 提交动作本身也要走约束
+
+- 提交前先自查并把结果贴出来：`bash ~/.codex/check-commit-attribution.sh --message <message 文件>`。
+- 禁止「一次性 stage + commit」的快捷路径：先给出 `git status` / `git diff` 摘要和拟用的 commit message，等用户确认后再提交。
+- 本机已把 `~/.codex/git-hooks` 挂成全局 `core.hooksPath`，违规提交会被 git 直接拒绝。不要用 `--no-verify` 或改 `core.hooksPath` 绕过；钩子报错时改 message 或改身份，不改门禁。
+- 提交后自检：`bash ~/.codex/check-commit-attribution.sh --range HEAD~1..HEAD`。
+- 仓库自带 `core.hooksPath`（如 husky）时全局钩子不生效，需要把 `~/.codex/git-hooks/commit-msg` 接进该仓库的钩子链，或在该仓库补一条等价的 `commit-msg`。
+
 ## 验证和沟通
 
 - 运行与本次改动相称的真实 lint、测试、构建或静态检查命令。

@@ -15,13 +15,21 @@ make_fixture() {
   local name="$1"
   local repo="$TEST_ROOT/$name/repo"
 
-  mkdir -p "$repo/global" "$repo/.github" "$repo/.githooks" "$repo/scripts" "$repo/tests"
+  mkdir -p "$repo/global/git-hooks" "$repo/.github" "$repo/.githooks" "$repo/scripts" "$repo/tests"
   git init -q "$repo"
   git -C "$repo" config user.name "Joseph Koh"
   git -C "$repo" config user.email "joseph@example.com"
+  # 隔离本机的全局 core.hooksPath：否则开发机上装了全局钩子后，夹具提交会跑真实钩子，
+  # 测试结果随本机安装状态漂移。
+  mkdir -p "$TEST_ROOT/empty-hooks"
+  git -C "$repo" config core.hooksPath "$TEST_ROOT/empty-hooks"
 
   printf 'global rules v1\n' >"$repo/global/AGENTS.md"
   printf 'detailed flow v1\n' >"$repo/global/ai-change-implementation-prompt.md"
+  printf 'global commit-msg hook\n' >"$repo/global/git-hooks/commit-msg"
+  printf 'global chain helper\n' >"$repo/global/git-hooks/_chain"
+  printf 'global pre-commit hook\n' >"$repo/global/git-hooks/pre-commit"
+  printf 'global pre-push hook\n' >"$repo/global/git-hooks/pre-push"
   printf 'owners\n' >"$repo/.github/CODEOWNERS"
   printf 'hook\n' >"$repo/.githooks/commit-msg"
   printf 'readme\n' >"$repo/README.md"
@@ -169,6 +177,25 @@ expect_same_content canonical-prompt \
 expect_same_content canonical-checker \
   "$targets_repo/scripts/check-commit-attribution.sh" \
   "$targets_home/.codex/check-commit-attribution.sh"
+expect_same_content canonical-hook-commit-msg \
+  "$targets_repo/global/git-hooks/commit-msg" \
+  "$targets_home/.codex/git-hooks/commit-msg"
+
+# 钩子必须可执行：内容一致但丢了 x 位，git 会静默跳过，门禁等于没装。
+if [[ -x "$targets_home/.codex/git-hooks/commit-msg" && -x "$targets_home/.codex/git-hooks/pre-commit" ]]; then
+  printf 'PASS global-hooks-executable\n'
+else
+  printf 'FAIL global-hooks-executable\n' >&2
+  failures=$((failures + 1))
+fi
+
+hooks_path="$(HOME="$targets_home" git config --global --get core.hooksPath 2>/dev/null || true)"
+if [[ "$hooks_path" == "$targets_home/.codex/git-hooks" ]]; then
+  printf 'PASS global-hooks-path-configured\n'
+else
+  printf 'FAIL global-hooks-path-configured (got: %s)\n' "${hooks_path:-<unset>}" >&2
+  failures=$((failures + 1))
+fi
 
 expect_symlink_to link-claude-code "$canonical" "$targets_home/.claude/CLAUDE.md"
 expect_symlink_to link-pi "$canonical" "$targets_home/.pi/agent/AGENTS.md"
