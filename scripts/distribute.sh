@@ -54,6 +54,12 @@ DSH_DIR="$(resolve_target_dir "${DSH_HOME:-}" "$HOME/.dsh" "DSH_HOME")"
 WORKBUDDY_DIR="$(resolve_target_dir "${WORKBUDDY_CONFIG_DIR:-}" "$HOME/.workbuddy-ai" "WORKBUDDY_CONFIG_DIR")"
 WORKBUDDY_RULE_PATH="$WORKBUDDY_DIR/rules/$WORKBUDDY_RULE_NAME"
 
+# OrbStack 等虚拟机把本机 work 目录共享进 VM 后，VM 内的 AI 工具（如 Claude Code）
+# 读不到宿主机的 ~/.claude / ~/.codex 用户级入口；work 根目录的 CLAUDE.md 是它们经
+# 挂载能看到的唯一祖先约束入口。用普通文件副本而非软链：不依赖 VM 侧是否也共享 home，
+# 对任何挂载拓扑都成立。Claude Code 会从 cwd 向上逐级读取祖先目录的 CLAUDE.md。
+WORK_SHARE_DIR="$HOME/Documents/work"
+
 # --- 目标定义 -------------------------------------------------------------
 # copy  ：内容来自仓库源文件，逐字节比对；受管路径为软链接时拒绝安装。
 # link  ：软链接到 CANONICAL_AGENTS，保证多工具共用同一份真源，不会各自漂移。
@@ -66,6 +72,7 @@ COPY_SOURCES=(
   "global/git-hooks/_chain|$HOOKS_DIR/_chain"
   "global/git-hooks/pre-commit|$HOOKS_DIR/pre-commit"
   "global/git-hooks/pre-push|$HOOKS_DIR/pre-push"
+  "global/AGENTS.md|$WORK_SHARE_DIR/CLAUDE.md"
 )
 
 LINK_TARGETS=(

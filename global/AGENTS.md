@@ -27,6 +27,7 @@
 ~/.commandcode/AGENTS.md                    # commandcode（软链）
 ~/.omp/agent/AGENTS.md                      # omp（软链）
 ~/.workbuddy-ai/rules/agent-governance.md   # WorkBuddy 用户级规则（带 frontmatter，非软链）
+~/Documents/work/CLAUDE.md                  # OrbStack 虚拟机共享 work 目录入口（普通文件副本，供 VM 内 Claude Code 等经挂载读取）
 ```
 
 WorkBuddy 另有工作区级入口：项目根目录的 `AGENTS.md`、`CODEBUDDY.md` 或 `.codebuddy/CODEBUDDY.md`，以及 `.codebuddy/rules/*.md`；这些属于项目自己的文件，本仓不写。
