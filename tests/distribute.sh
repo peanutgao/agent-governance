@@ -15,7 +15,7 @@ make_fixture() {
   local name="$1"
   local repo="$TEST_ROOT/$name/repo"
 
-  mkdir -p "$repo/global/git-hooks" "$repo/.github" "$repo/.githooks" "$repo/scripts" "$repo/tests"
+  mkdir -p "$repo/global/git-hooks" "$repo/.github" "$repo/.githooks" "$repo/scripts" "$repo/tests" "$repo/templates/project"
   git init -q "$repo"
   git -C "$repo" config user.name "Joseph Koh"
   git -C "$repo" config user.email "joseph@example.com"
@@ -35,6 +35,8 @@ make_fixture() {
   printf 'readme\n' >"$repo/README.md"
   printf 'onboarding\n' >"$repo/onboarding.md"
   printf 'attribution checker\n' >"$repo/scripts/check-commit-attribution.sh"
+  printf 'project template\n' >"$repo/templates/project/AI-GOVERNANCE.md"
+  printf 'project sync\n' >"$repo/scripts/sync-project-governance.sh"
   cp "$ROOT_DIR/scripts/check-version-bump.sh" "$repo/scripts/check-version-bump.sh"
   cp "$ROOT_DIR/scripts/distribute.sh" "$repo/scripts/distribute.sh"
   printf 'baseline tests\n' >"$repo/tests/placeholder.sh"

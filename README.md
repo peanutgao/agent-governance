@@ -13,7 +13,9 @@ global/
 ├── ai-change-implementation-prompt.md # 复杂任务按需读取的详细流程
 └── git-hooks/                         # 全局 git 钩子（commit-msg 归属门禁 + 转发层）
 onboarding.md                          # 多设备初始化和更新
-scripts/distribute.sh                  # 分发（--rollback / --list-targets）
+templates/project/AI-GOVERNANCE.md      # 项目仓库携带的公共治理快照模板
+scripts/distribute.sh                  # 分发全局入口（--rollback / --list-targets）
+scripts/sync-project-governance.sh     # 从模板生成三仓 AI-GOVERNANCE.md（--check）
 scripts/check-commit-attribution.sh    # commit 归属检查（--governance / --print-policy）
 scripts/check-version-bump.sh          # 规则改动检查
 tests/run-all.sh                       # 全部测试的唯一入口
@@ -45,7 +47,7 @@ WorkBuddy 需要单独处理：它的用户级规则是 `<configDir>/rules/*.md`
 
 `DSH_HOME` 与 `WORKBUDDY_CONFIG_DIR` 只在指向 `$HOME` 之下时才被采用，避免误写到真实用户目录；确需安装到外部目录时设 `AGENT_GOVERNANCE_ALLOW_EXTERNAL_TARGETS=1`。
 
-> 本仓只分发个人全局规则，不分发项目设置、项目 hook、权限、token 或个人 memory。
+> 本仓分发个人全局规则和全局 Skills。项目设置、项目 hook、权限、token 和个人 memory 由各项目或本机工具维护。
 > `~/.claude/settings.json`、`settings.local.json`、`~/.workbuddy-ai/{SOUL,IDENTITY,USER,MEMORY}.md` 和其他本机配置由个人自行维护，分发脚本不碰。
 
 ## Git 归属的执行点
@@ -94,13 +96,27 @@ bash scripts/distribute.sh --list-targets   # 只看目标清单，不安装
 bash scripts/distribute.sh --rollback
 ```
 
+## 全局 Skills
+
+在治理仓执行 `python3 scripts/skills.py plan` 预览当前设备。同步、冲突接管和回退说明见 [全局 Skills 使用说明](skills/README.md)。
+
 ## 项目级 AI 约束
 
 每个项目仓库维护自己的项目级 AI 约束，通常放在项目根目录的 `AGENTS.md` 或 `CLAUDE.md`，并与项目自己的 Spec、架构文档和测试说明一起演进。
 
 项目级文件负责项目专属内容，例如技术栈、目录、构建命令、模块边界、业务规则和发布流程；不要把这些内容写进本仓的全局规则。
 
-本仓不复制或覆盖任何项目仓库文件。
+项目仓库的 `AI-GOVERNANCE.md` 是本仓 `templates/project/AI-GOVERNANCE.md` 的生成物，不是第二份可手改真源。改公共治理规则时：
+
+```bash
+# 1. 修改模板 / global 规则，bump VERSION
+# 2. 从模板重新生成三仓快照
+bash scripts/sync-project-governance.sh
+# 3. 只校验不写入
+bash scripts/sync-project-governance.sh --check
+```
+
+`--root` 可指定 monorepo 根目录；默认是 `$HOME/Documents/work/personal-project/hengqin`。生成器不会触碰各仓 `AGENTS.md`、specs、业务代码或 Git 历史。
 
 项目交付物和 Git/协作记录不得披露 AI 参与、模型、供应商、Agent、Bot、生成归属或类似自动化身份信息；历史提交不重写。治理仓规则源可以使用必要的治理术语来定义这条约束。
 

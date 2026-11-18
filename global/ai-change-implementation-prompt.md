@@ -141,7 +141,7 @@ Skill 路由：
 | 正确行为已经明确，但非显然、间歇性、跨模块或高风险的技术根因不明 | `diagnosing-bugs` 或等价的深度诊断 |
 | 目标明确，但存在多个合理的实现、设计或架构方案 | design / brainstorming |
 | 方案已经确定，但任务复杂、涉及多个步骤或多个模块 | plan / writing-plans |
-| 目标、方案和范围都明确，改动局部 | 直接实现或对应的快速路径 |
+| 目标、方案和范围都明确，改动局部且无需前置复核 | 直接实现或对应的快速路径 |
 
 ### Grilling interaction
 
@@ -162,7 +162,7 @@ Skill 路由：
 
 ### Independent evidence check and respectful challenge
 
-用户回答进入下一轮前必须经过独立核验：
+用户回答进入下一轮前必须经过独立核验。需求已经澄清后，用户再提出替代方案，也要重新核对方案改变的前提、调用方和影响：
 
 ```text
 用户回答
@@ -192,7 +192,7 @@ Skill 路由：
 
 AI 可以尊重用户的最终业务决定，但不能把用户的错误事实判断包装成正确事实，也不能因为用户已经回答过就停止核验。
 
-这里的“独立核验”是相对于用户陈述和当前假设的证据核对，不默认要求第二个 Agent。项目或风险规则若明确要求 reviewer，主 Agent 的自审不等于 reviewer；`Reviewer: pending` 时不得将该高风险任务标记为完成。
+事实核验由当前会话查证据。方案命中 §12.1 时，另由独立 reviewer 核对方案与项目的匹配性。两项都适用时都要取得证据。
 
 Skill 是流程工具，不是硬依赖。当前环境没有对应 Skill 时，不得伪造调用；执行等价的最小澄清、诊断、设计或计划流程。明确且局部的任务不因 Skill 不可用而阻塞，关键业务决定未确认时则不能继续猜测实现。
 
@@ -250,11 +250,9 @@ Identify missing cases
 Questions / Proposal
         ↓
 Decision
-        ↓
-Approved Spec
 ```
 
-之后才允许实现。
+之后按 §12.1 判断方案是否需要独立复核，并按 §13 同步适用的文档，再进入实现。
 
 ## 5. BUG FLOW
 
@@ -262,7 +260,7 @@ Approved Spec
 
 ### Simple Implementation Bug — Fast Path
 
-如果 Bug 明显且局部、Expected / Actual、边界和根因明确，并且不涉及公共接口、数据模型、权限、持久化或编译边界：
+Bug 明显且局部、Expected / Actual、边界和根因明确，未涉及公共接口、数据模型、权限、持久化或编译边界，且按 §12.1 和项目规则无需前置复核时，可走快速路径。
 
 ```text
 确认现象、预期和直接根因
@@ -352,6 +350,8 @@ Understand affected execution chain and state/data flow
         ↓
 Prove root cause, not only the symptom
         ↓
+Independent pre-fix review when required by §12.1 or the project
+        ↓
 Fix implementation
         ↓
 Add / update regression tests when a suitable test seam exists
@@ -363,6 +363,8 @@ Perform systematic adversarial review of the affected paths
 ```
 
 没有合适测试接缝时，保留复现证据并执行针对性验证；不得以新增回归测试作为简单 Bug 的修改前置条件或完成阻塞。
+
+对非显然 Bug，用能够区分候选原因的复现、运行证据或代码路径证明直接起因。记录触发条件、受影响的调用方和验证信号。仅靠吞错、放宽条件或补兜底让现象消失时，继续核对根因。在根因边界需要调整已批准行为或架构时，按新的分类进入相应门禁。
 
 ## 6.1 SHARED WORKTREE VALIDATION
 
@@ -404,6 +406,8 @@ Clarify / grilling
       ↓
 Decision
       ↓
+Independent proposal review if required by §12.1
+      ↓
 Update Authoritative Spec
       ↓
 Update Design / Contract if required
@@ -443,6 +447,8 @@ Clarification
       ↓
 Decision
       ↓
+Independent proposal review if required by §12.1
+      ↓
 Update Spec
       ↓
 Implementation
@@ -460,6 +466,8 @@ Architecture Problem
 Create Design Proposal
       ↓
 Impact Analysis
+      ↓
+Independent proposal review (§12.1)
       ↓
 Update Design / ADR
       ↓
@@ -502,6 +510,8 @@ Change Proposal
 §3.1 Requirement Clarification
       ↓
 Decision
+      ↓
+Independent proposal review if required by §12.1
       ↓
 Update Spec
       ↓
@@ -599,6 +609,21 @@ Not affected:
 - ...
 ```
 
+## 12.1 INDEPENDENT PROPOSAL REVIEW
+
+按方案影响判断是否需要前置复核。任一条件成立，须在改动实现前获得独立结论：
+
+- 首次确定一个新项目的基础架构，涉及会长期约束开发的模块归属、依赖方向或关键技术选型。
+- 实质性改变模块归属、公共 API / Event / Data Contract、安全或信任边界、权限、关键业务状态流转、持久化格式、迁移、数据归属或对外兼容性。改动文件数量与触发无关。
+- 项目已有组件、服务或代码库中有可能满足要求的实现，仍拟另建一套或绕开它。简单的业务组合或使用已有扩展点，按实际边界判定。
+- 项目规则明确要求前置复核。Bug 也按实际影响判定，项目对非显然 Bug 的额外要求照常执行。
+
+未触发前置复核的普通功能，沿已有架构和已批准边界实施，可用当前会话做相称验证和完成前复核。符合条件的简单局部 Bug 按 §5 执行。
+
+在现有方案、任务或决策记录里提供已批准的需求或决策、受影响的边界与调用方、查过的可复用实现，以及最小可行方案。优先由未参与提出或实施该方案的子 Agent 担任独立 reviewer，也可由满足同一独立条件的人员复核。reviewer 直接核对相关 Spec、Contract、架构与代码，给出「通过」或「需修订」的依据，并检查至少一个具体反例或失败场景。存在更小且同样可行的方案时，给出比较。
+
+需要修订时先改方案。已通过方案发生实质变化时，只重新复核受影响的决定。独立 reviewer 不可用时记为 `Reviewer: pending`，继续能独立进行的查证、复现和备选分析，受门禁的代码待复核通过后修改。完成前的代码审查按项目要求另行执行。
+
 ## 13. UPDATE KNOWLEDGE BEFORE IMPLEMENTATION
 
 如果是正式业务行为变化：
@@ -625,7 +650,7 @@ Design / Architecture / ADR
 API / Event / Data Contract
 ```
 
-然后才能进入实现。
+对应 Spec 或架构文档缺失时，在项目已有文档结构下创建。修改前确认方案记录中的预期与这些文档一致，然后进入实现。交付时按 §18 和 §19 复核代码、测试和受影响的文档。
 
 ## 13.1 SPEC AND ADR ORGANIZATION
 
@@ -692,6 +717,8 @@ Change Proposal
   ↓
 §3.1 Clarification / Decision
   ↓
+Independent review of affected decisions when required by §12.1
+  ↓
 Update Spec / Design
   ↓
 Re-plan
@@ -739,6 +766,8 @@ Plan 必须包含：
 Implement the smallest coherent change
 that satisfies the approved spec.
 ```
+
+新增组件、服务、依赖或共享能力前，搜索现有入口和相似实现。需要新建、替换或自研时，在现有记录里说明候选路径、可覆盖的要求、关键缺口和选型理由。理由应来自当前需求、契约或验证结果。
 
 禁止未经要求进行：
 
@@ -1039,9 +1068,10 @@ Review Result: 通过 / issue / deferred
 [ ] Code implements approved behavior
 [ ] Acceptance Criteria are covered
 [ ] Root cause is addressed rather than only the symptom
+[ ] Independent review approved the implemented proposal when §12.1 applies
 [ ] Selected validation passes; tests only when required
 [ ] Systematic adversarial review completed; no unresolved counterexample
-[ ] Required reviewer approved, or reviewer is not required
+[ ] Project-required post-implementation reviewer approved, when applicable
 [ ] Migration / compatibility is handled
 [ ] No stale business references remain
 [ ] No unresolved ambiguity remains
@@ -1242,7 +1272,7 @@ NO → STOP implementation
 
 YES → continue
 
-Simple local Implementation Bug?
+Simple local Implementation Bug eligible for §5, including its pre-review check?
 
 YES → Confirm reproduction / expected / root cause
       → Understand affected call chain / state / data flow
@@ -1253,7 +1283,7 @@ YES → Confirm reproduction / expected / root cause
       → Skip full Impact Analysis / Plan / Document Drift / Reconciliation
       → DONE
 
-Multiple local fixes in one project/worktree?
+Multiple fixes eligible for §5 in one project/worktree?
 
 YES → Each fix uses local targeted checks
       → Do not auto-run shared project build / test / run
@@ -1290,6 +1320,11 @@ Migration
 6. CHANGE GATE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+Prepare the proposal or design for the affected boundaries.
+
+Independent review required by §12.1?
+→ Obtain independent review approval before implementation
+
 Behavior change?
 → Update Spec
 
@@ -1307,8 +1342,6 @@ Contract change?
 
  Available engineering Skill (optional)
 
-Design
-  ↓
 Plan
   ↓
 Tasks

@@ -1,0 +1,29 @@
+{
+  "registryCli": "1.9.0",
+  "skills": {
+    "grilling": {
+      "type": "local",
+      "upstream": "https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling",
+      "license": "MIT"
+    },
+    "codebase-design": {
+      "type": "github",
+      "repo": "mattpocock/skills",
+      "path": "skills/engineering/codebase-design",
+      "commit": "d1478fcb140db0b93c0c8df17bcfd311844749d0",
+      "digest": "8aef2974423f5a5093aa9c207d49b1559761f9aeb77311ba05c7fb0d73c5afe2"
+    },
+    "diagnosing-bugs": {
+      "type": "github",
+      "repo": "mattpocock/skills",
+      "path": "skills/engineering/diagnosing-bugs",
+      "commit": "d1478fcb140db0b93c0c8df17bcfd311844749d0",
+      "digest": "68419d2915e1e9baaaea70161592ecd3b69af2656bc1c5119099761829bc3550"
+    },
+    "code-review": {
+      "type": "local",
+      "upstream": "https://github.com/mattpocock/skills/tree/main/skills/engineering/code-review",
+      "license": "MIT"
+    }
+  }
+}

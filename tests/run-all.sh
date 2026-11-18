@@ -12,6 +12,8 @@ SUITES=(
   tests/check-global-hook.sh
   tests/check-version-bump.sh
   tests/distribute.sh
+  tests/sync-project-governance.sh
+  tests/skills.sh
 )
 
 failures=0

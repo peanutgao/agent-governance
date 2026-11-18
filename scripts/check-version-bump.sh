@@ -18,9 +18,11 @@ RULE_PATHS=(
   .githooks
   README.md
   onboarding.md
+  templates
   scripts/check-commit-attribution.sh
   scripts/distribute.sh
   scripts/check-version-bump.sh
+  scripts/sync-project-governance.sh
 )
 
 SEMVER_REGEX='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
