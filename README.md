@@ -14,7 +14,7 @@ global/
 └── git-hooks/                         # 全局 git 钩子（commit-msg 归属门禁 + 转发层）
 onboarding.md                          # 多设备初始化和更新
 templates/project/AI-GOVERNANCE.md      # 项目仓库携带的公共治理快照模板
-scripts/distribute.sh                  # 分发全局入口（--rollback / --list-targets）
+scripts/distribute.sh                  # 分发全局入口（--check / --rollback / --list-targets）
 scripts/sync-project-governance.sh     # 从模板生成三仓 AI-GOVERNANCE.md（--check）
 scripts/check-commit-attribution.sh    # commit 归属检查（--governance / --print-policy）
 scripts/check-version-bump.sh          # 规则改动检查
@@ -73,6 +73,7 @@ WorkBuddy 需要单独处理：它的用户级规则是 `<configDir>/rules/*.md`
 
 ```bash
 bash scripts/distribute.sh
+bash scripts/distribute.sh --check          # 校验本机副本是否仍等于源文件
 bash scripts/distribute.sh --list-targets   # 只看目标清单，不安装
 ```
 

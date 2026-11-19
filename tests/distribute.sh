@@ -236,6 +236,44 @@ else
   failures=$((failures + 1))
 fi
 
+# --check 必须回答「本机副本是否还等于源文件」：一致时 0，手工改动后 1。
+HOME="$targets_home" bash "$targets_repo/scripts/distribute.sh" --check >"$TEST_ROOT/check-clean.out" 2>&1
+check_clean_code=$?
+if [[ "$check_clean_code" -eq 0 ]]; then
+  printf 'PASS check-reports-clean-install\n'
+else
+  printf 'FAIL check-reports-clean-install (exit %s)\n' "$check_clean_code" >&2
+  cat "$TEST_ROOT/check-clean.out" >&2
+  failures=$((failures + 1))
+fi
+
+printf '# hand edited\n' >>"$targets_home/.codex/AGENTS.md"
+set +e
+HOME="$targets_home" bash "$targets_repo/scripts/distribute.sh" --check >"$TEST_ROOT/check-drift.out" 2>&1
+check_drift_code=$?
+set -e
+if [[ "$check_drift_code" -ne 0 ]] && grep -q '不一致' "$TEST_ROOT/check-drift.out"; then
+  printf 'PASS check-detects-hand-edited-copy\n'
+else
+  printf 'FAIL check-detects-hand-edited-copy (exit %s)\n' "$check_drift_code" >&2
+  cat "$TEST_ROOT/check-drift.out" >&2
+  failures=$((failures + 1))
+fi
+
+# 版本落后也必须被 --check 拦下：内容一致但 .gov-version 旧，说明部署未完成。
+printf '0.9.0\n' >"$targets_home/.codex/.gov-version"
+set +e
+HOME="$targets_home" bash "$targets_repo/scripts/distribute.sh" --check >"$TEST_ROOT/check-version.out" 2>&1
+check_version_code=$?
+set -e
+if [[ "$check_version_code" -ne 0 ]] && grep -q '版本' "$TEST_ROOT/check-version.out"; then
+  printf 'PASS check-detects-stale-version\n'
+else
+  printf 'FAIL check-detects-stale-version (exit %s)\n' "$check_version_code" >&2
+  cat "$TEST_ROOT/check-version.out" >&2
+  failures=$((failures + 1))
+fi
+
 if (( failures > 0 )); then
   printf '%d distribution checks failed.\n' "$failures" >&2
   exit 1

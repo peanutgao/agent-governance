@@ -4,6 +4,7 @@
 # 用法:
 #   bash scripts/distribute.sh                     # 分发
 #   bash scripts/distribute.sh --rollback          # 回滚到最近一次分发前的整组快照
+#   bash scripts/distribute.sh --check             # 只校验已安装副本，不一致退出 1
 #   bash scripts/distribute.sh --list-targets      # 只打印目标清单，不安装
 #
 # 行为:
@@ -102,9 +103,63 @@ usage() {
   cat >&2 <<'USAGE'
 用法:
   distribute.sh                # 分发
+  distribute.sh --check        # 只校验已安装副本与源文件是否一致（不一致退出 1）
   distribute.sh --rollback     # 回滚到最近一次分发前的整组快照
   distribute.sh --list-targets # 打印目标清单
 USAGE
+}
+
+# --- 一致性校验 -----------------------------------------------------------
+# 只比较，不安装。用于回答「本机副本是否还等于治理仓源文件」：
+# 手工改过本机副本、或某个工具入口仍是旧版时，这里会列出来并退出 1。
+check_installed() {
+  local drifts=0
+  local entry src dest generated
+
+  for entry in "${COPY_SOURCES[@]}"; do
+    src="$REPO_DIR/${entry%%|*}"
+    dest="${entry#*|}"
+    if [[ ! -e "$dest" ]]; then
+      printf '缺失  %s\n' "$dest" >&2
+      drifts=$((drifts + 1))
+    elif ! cmp -s "$src" "$dest"; then
+      printf '不一致 %s  ←  %s\n' "$dest" "${entry%%|*}" >&2
+      drifts=$((drifts + 1))
+    fi
+  done
+
+  for entry in "${LINK_TARGETS[@]}"; do
+    dest="${entry%|*}"
+    if [[ ! -L "$dest" || "$(readlink "$dest")" != "$CANONICAL_AGENTS" ]]; then
+      printf '非软链 %s  →  %s  (%s)\n' "$dest" "$CANONICAL_AGENTS" "${entry#*|}" >&2
+      drifts=$((drifts + 1))
+    fi
+  done
+
+  generated="$(mktemp "${TMPDIR:-/tmp}/agent-governance-check.XXXXXX")"
+  workbuddy_rule_content >"$generated"
+  if [[ ! -f "$WORKBUDDY_RULE_PATH" ]]; then
+    printf '缺失  %s\n' "$WORKBUDDY_RULE_PATH" >&2
+    drifts=$((drifts + 1))
+  elif ! cmp -s "$generated" "$WORKBUDDY_RULE_PATH"; then
+    printf '不一致 %s  ←  global/AGENTS.md + frontmatter\n' "$WORKBUDDY_RULE_PATH" >&2
+    drifts=$((drifts + 1))
+  fi
+  rm -f "$generated"
+
+  local latest installed=""
+  latest="$(tr -d '[:space:]' <"$VERSION_FILE")"
+  [[ -f "$PREFIX/.gov-version" ]] && installed="$(tr -d '[:space:]' <"$PREFIX/.gov-version")"
+  if [[ "$installed" != "$latest" ]]; then
+    printf '版本  已装 %s / 最新 %s\n' "${installed:-<none>}" "$latest" >&2
+    drifts=$((drifts + 1))
+  fi
+
+  if (( drifts > 0 )); then
+    printf '==> %d 处与治理仓 %s 不一致。修复：bash scripts/distribute.sh\n' "$drifts" "$latest" >&2
+    return 1
+  fi
+  printf '==> 全部受管副本与治理仓 %s 一致。\n' "$latest"
 }
 
 list_targets() {
@@ -310,6 +365,12 @@ main() {
     --rollback)
       [[ "$#" -eq 1 ]] || { usage; return 2; }
       rollback
+      return
+      ;;
+    --check)
+      [[ "$#" -eq 1 ]] || { usage; return 2; }
+      [[ -f "$VERSION_FILE" ]] || { printf '错误: 缺少 VERSION 文件（%s）\n' "$VERSION_FILE" >&2; return 1; }
+      check_installed
       return
       ;;
     --list-targets)
