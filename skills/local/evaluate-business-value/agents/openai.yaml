@@ -1,0 +1,4 @@
+interface:
+  display_name: "商业价值评估"
+  short_description: "基于项目现状、真实使用与市场证据，评估商业价值、投入回报与继续条件"
+  default_prompt: "请使用 $evaluate-business-value，结合项目现状和当前 AI 发展，批判性评估真实使用价值、付费理由、获客成本及是否值得继续投入。"

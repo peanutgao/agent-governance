@@ -1,6 +1,6 @@
 # 全局 Skills 同步
 
-在 macOS 或 Linux 的治理仓根目录使用 Python 3.9 或更新版本。首次获取上游 Skill 还需要 `curl`、npm、Node.js 22.20 或更新版本，以及可访问 GitHub 和 npm 的网络。
+在 macOS、Linux 或 Windows 的治理仓根目录使用 Python 3.9 或更新版本。新设备可用 [一键部署入口](../onboarding.md#新设备一键部署) 准备运行时。首次获取上游 Skill 还需要 `curl`、npm、Node.js 22.20 或更新版本，以及可访问 GitHub 和 npm 的网络。
 
 ```bash
 python3 scripts/skills.py plan
@@ -42,5 +42,9 @@ python3 scripts/skills.py sync --adopt codex:grilling --adopt claude-code:code-r
 ## 更新来源
 
 以 [manifest.json](manifest.json) 为清单。自改版在 `local/` 下保留上游许可证。升级原版时选择上游 Git 提交，保持 Vercel Skills CLI 锁版，用临时工作目录分发并核对 `SKILL.md`、附带资料和新摘要。摘要使用 `scripts/skills.py` 的 `skill_key` 对 Vercel CLI 安装得到的目录计算。
+
+`bash scripts/install.sh` 默认同步 [清单](manifest.json) 中的全部 Skills，具体名称和来源见清单。`code-review`、`grilling`、`evaluate-business-value`、`grill-me`、`superpowers` 使用仓内的本机版本。
+
+GitHub 源的 `path` 为 `.` 时，从仓库根目录读取 Skill。根目录源可用 `upstreamName` 声明上游名称，安装时使用清单中的名称，摘要以调整名称后的目录为准。Windows 摘要按文件内容校验，源包含 Unix 可执行位时用 `windowsDigest` 记录对应的 Windows 摘要。
 
 当前原版 `codebase-design` 与 `diagnosing-bugs` 锁定在 [Matt Pocock Skills v1.3.2 对应提交](https://github.com/mattpocock/skills/commit/d1478fcb140db0b93c0c8df17bcfd311844749d0)。`grilling` 保留一次一问和事实核对。`code-review` 从项目现有文档读取规则和 Spec，并根据工具能力执行两路审查。项目要求独立审查时，单会话复核应明确标记其状态。
