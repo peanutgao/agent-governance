@@ -18,7 +18,9 @@
 # 该脚本只改由治理仓生成的快照，不改各仓 AGENTS.md、specs 或业务代码。
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+_self="${BASH_SOURCE[0]:-}"
+[[ -f "$_self" ]] || _self="$0"
+REPO_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
 TEMPLATE="$REPO_DIR/templates/project/AI-GOVERNANCE.md"
 VERSION_FILE="$REPO_DIR/VERSION"
 TARGET_ROOT="${PROJECT_GOVERNANCE_ROOT:-$HOME/Documents/work/personal-project/hengqin}"
@@ -66,18 +68,64 @@ done
 [[ -f "$TEMPLATE" ]] || { printf '错误: 缺少模板 %s\n' "$TEMPLATE" >&2; exit 1; }
 [[ -f "$VERSION_FILE" ]] || { printf '错误: 缺少 VERSION %s\n' "$VERSION_FILE" >&2; exit 1; }
 [[ -d "$TARGET_ROOT" ]] || { printf '错误: 目标根目录不存在 %s\n' "$TARGET_ROOT" >&2; exit 1; }
+TARGET_ROOT="$(cd -P "$TARGET_ROOT" && pwd)"
 
+real_repositories=0
 for repo in "${REPOS[@]}"; do
-  [[ -d "$TARGET_ROOT/$repo" ]] || { printf '错误: 目标仓库不存在 %s\n' "$TARGET_ROOT/$repo" >&2; exit 1; }
+  repo_path="$TARGET_ROOT/$repo"
+  dest="$repo_path/AI-GOVERNANCE.md"
+  if [[ -L "$repo_path" || ! -d "$repo_path" || -L "$dest" || ( -e "$dest" && ! -f "$dest" ) ]]; then
+    printf '错误: 目标仓库或快照类型不安全: %s\n' "$dest" >&2
+    exit 1
+  fi
+  if [[ "$mode" == write ]] &&
+    { [[ -e "$repo_path/.git" || -L "$repo_path/.git" ]] ||
+      git -C "$repo_path" rev-parse --git-dir >/dev/null 2>&1; }; then
+    real_repositories=1
+    project_status="$(git -C "$repo_path" status --porcelain --untracked-files=all -- AI-GOVERNANCE.md)"
+    if [[ -n "$project_status" ]] ||
+      { [[ -f "$dest" ]] && ! git -C "$repo_path" ls-files --error-unmatch -- AI-GOVERNANCE.md >/dev/null 2>&1; }; then
+      printf '错误: 快照有未提交或未跟踪内容，拒绝覆盖: %s\n' "$dest" >&2
+      exit 1
+    fi
+  fi
 done
 
-version="$(tr -d '[:space:]' <"$VERSION_FILE")"
-[[ -n "$version" ]] || { printf '错误: VERSION 为空\n' >&2; exit 1; }
+if [[ "$real_repositories" == 1 ]]; then
+  release_commit="$(git -C "$REPO_DIR" rev-parse HEAD)"
+  bash "$REPO_DIR/scripts/check-version-bump.sh"
+  release_ref="$(git -C "$REPO_DIR" symbolic-ref --quiet refs/remotes/origin/HEAD || true)"
+  release_ref="${release_ref:-refs/remotes/origin/main}"
+  if ! git -C "$REPO_DIR" merge-base --is-ancestor "$release_commit" "$release_ref" 2>/dev/null; then
+    printf '错误: 当前治理提交尚未进入已获取的 origin 默认分支，拒绝同步项目。\n' >&2
+    exit 1
+  fi
+fi
+
+if [[ "$real_repositories" == 1 ]]; then
+  version="$(git -C "$REPO_DIR" show "$release_commit:VERSION")"
+else
+  version="$(cat "$VERSION_FILE")"
+fi
+if [[ "$(awk 'END { print NR }' "$VERSION_FILE")" != 1 ||
+  ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+  printf '错误: VERSION 必须只包含一行严格的 SemVer。\n' >&2
+  exit 1
+fi
 
 tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-governance-sync.XXXXXX")"
-trap 'rm -rf "$tmp_dir"' EXIT
+staged_file=
+cleanup() {
+  [[ -z "$staged_file" ]] || rm -f "$staged_file"
+  rm -rf "$tmp_dir"
+}
+trap cleanup EXIT
 
 # 先把版本号写进 header 与边界标记；hash 字段暂时保留占位符。
+if [[ "$real_repositories" == 1 ]]; then
+  git -C "$REPO_DIR" show "$release_commit:templates/project/AI-GOVERNANCE.md" >"$tmp_dir/template.md"
+  TEMPLATE="$tmp_dir/template.md"
+fi
 sed "s/__BASELINE_VERSION__/$version/g" "$TEMPLATE" >"$tmp_dir/rendered.md"
 
 # 计算哈希时，header 的 hash 字段必须还原为固定占位符（与 check 脚本同一方案）。
@@ -114,8 +162,22 @@ for repo in "${REPOS[@]}"; do
     else
       printf '✓ %s\n' "$dest"
     fi
-  else
-    cp "$tmp_dir/final.md" "$dest"
+  elif ! cmp -s "$tmp_dir/final.md" "$dest"; then
+    if [[ "$real_repositories" == 1 ]] && git -C "$TARGET_ROOT/$repo" rev-parse --git-dir >/dev/null 2>&1; then
+      project_status="$(git -C "$TARGET_ROOT/$repo" status --porcelain --untracked-files=all -- AI-GOVERNANCE.md)"
+      if [[ -n "$project_status" ]]; then
+        printf '错误: 快照在同步期间被修改: %s\n' "$dest" >&2
+        exit 1
+      fi
+    fi
+    staged_file="$(mktemp "$TARGET_ROOT/$repo/.governance.XXXXXX")"
+    cp -p "$tmp_dir/final.md" "$staged_file"
+    if [[ -L "$TARGET_ROOT/$repo" || -L "$dest" || ( -e "$dest" && ! -f "$dest" ) ]]; then
+      printf '错误: 快照路径在同步期间变化: %s\n' "$dest" >&2
+      exit 1
+    fi
+    mv -f "$staged_file" "$dest"
+    staged_file=
     printf '已更新: %s\n' "$dest"
   fi
 done

@@ -8,8 +8,8 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHAIN="$SELF_DIR/_chain"
 
 if [[ ! -f "$CHAIN" ]]; then
-  printf 'pre-commit: 缺少转发脚本（%s），跳过仓库原有 pre-commit。\n' "$CHAIN" >&2
-  exit 0
+  printf 'pre-commit: 缺少转发脚本（%s），无法转发仓库原有 pre-commit。\n' "$CHAIN" >&2
+  exit 1
 fi
 
 exec bash "$CHAIN" pre-commit "$@"

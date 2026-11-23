@@ -17,6 +17,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check version of this revision
+        run: bash scripts/check-version-bump.sh
+
       - name: Run governance test suites
         run: bash tests/run-all.sh
 

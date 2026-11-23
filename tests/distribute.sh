@@ -42,6 +42,7 @@ make_fixture() {
   printf 'baseline tests\n' >"$repo/tests/placeholder.sh"
   printf '1.0.0\n' >"$repo/VERSION"
 
+  ln -s global/AGENTS.md "$repo/AGENTS.md"
   git -C "$repo" add .
   git -C "$repo" commit -q -m "chore: baseline"
   printf '%s\n' "$repo"
@@ -191,12 +192,11 @@ else
   failures=$((failures + 1))
 fi
 
-hooks_path="$(HOME="$targets_home" git config --global --get core.hooksPath 2>/dev/null || true)"
-if [[ "$hooks_path" == "$targets_home/.codex/git-hooks" ]]; then
-  printf 'PASS global-hooks-path-configured\n'
-else
-  printf 'FAIL global-hooks-path-configured (got: %s)\n' "${hooks_path:-<unset>}" >&2
+if HOME="$targets_home" git config --global --get core.hooksPath >/dev/null 2>&1; then
+  printf 'FAIL distribution-must-not-mask-native-hooks\n' >&2
   failures=$((failures + 1))
+else
+  printf 'PASS distribution-does-not-mask-native-hooks\n'
 fi
 
 expect_symlink_to link-claude-code "$canonical" "$targets_home/.claude/CLAUDE.md"
@@ -273,6 +273,76 @@ else
   cat "$TEST_ROOT/check-version.out" >&2
   failures=$((failures + 1))
 fi
+
+mkdir -p "$TEST_ROOT/unsafe-home"
+unsafe_home="$TEST_ROOT/unsafe-home"
+expect_failure reject-parent-traversal env HOME="$unsafe_home" DSH_HOME="$unsafe_home/../outside" \
+  bash "$targets_repo/scripts/distribute.sh" --list-targets
+expect_failure reject-copy-link-collision env HOME="$unsafe_home" DSH_HOME="$unsafe_home/.CODEX" \
+  bash "$targets_repo/scripts/distribute.sh" --list-targets
+expect_failure reject-nested-target env HOME="$unsafe_home" DSH_HOME="$unsafe_home/.codex/AGENTS.md" \
+  bash "$targets_repo/scripts/distribute.sh" --list-targets
+mkdir -p "$unsafe_home/.codex" "$TEST_ROOT/unsafe-outside"
+ln -s "$TEST_ROOT/unsafe-outside" "$unsafe_home/.workbuddy-ai"
+expect_failure reject-parent-symlink run_distribution "$targets_repo" "$unsafe_home"
+rm -f "$unsafe_home/.workbuddy-ai"
+printf 'do not overwrite\n' >"$TEST_ROOT/unsafe-outside/sentinel"
+ln -s "$TEST_ROOT/unsafe-outside/sentinel" "$unsafe_home/.codex/.gov-version"
+expect_failure reject-version-symlink run_distribution "$targets_repo" "$unsafe_home"
+if ! grep -q '\.gov-version' "$unsafe_home/distribute.out" ||
+  [[ "$(<"$TEST_ROOT/unsafe-outside/sentinel")" != 'do not overwrite' ]]; then
+  printf 'FAIL symlink-version-was-not-the-rejection-reason\n' >&2
+  failures=$((failures + 1))
+fi
+
+# 校验版本和字节均匹配的独立安装，以隔离挂载配置检查。
+mount_repo="$(make_fixture mount)"
+mount_home="$TEST_ROOT/mount/home"
+run_distribution "$mount_repo" "$mount_home"
+HOME="$mount_home" git config --global core.hooksPath "$mount_home/.codex/git-hooks"
+expect_failure check-rejects-legacy-hook-override env HOME="$mount_home" \
+  bash "$mount_repo/scripts/distribute.sh" --check
+run_distribution "$mount_repo" "$mount_home"
+if HOME="$mount_home" git config --global --get core.hooksPath >/dev/null 2>&1; then
+  printf 'FAIL legacy-global-override-survived-migration\n' >&2
+  failures=$((failures + 1))
+fi
+
+native_repo="$TEST_ROOT/native-repo"
+HOME="$mount_home" git init -q "$native_repo"
+mkdir -p "$native_repo/.git/hooks"
+printf '#!/usr/bin/env bash\nprintf "native prepare hook\\n"\nexit 17\n' >"$native_repo/.git/hooks/prepare-commit-msg"
+chmod +x "$native_repo/.git/hooks/prepare-commit-msg"
+status=0
+HOME="$mount_home" git -C "$native_repo" hook run prepare-commit-msg -- COMMIT_EDITMSG message \
+  >"$TEST_ROOT/native-hook.out" 2>&1 || status=$?
+if [[ "$status" == 17 ]] && grep -q 'native prepare hook' "$TEST_ROOT/native-hook.out"; then
+  printf 'PASS git-selects-native-project-hook-after-migration\n'
+else
+  printf 'FAIL git-selects-native-project-hook-after-migration\n' >&2
+  failures=$((failures + 1))
+fi
+
+included="$mount_home/included.gitconfig"
+HOME="$mount_home" git config --file "$included" core.hooksPath "$mount_home/custom-hooks"
+HOME="$mount_home" git config --global include.path "$included"
+run_distribution "$mount_repo" "$mount_home"
+[[ "$(HOME="$mount_home" git config --global --includes --get core.hooksPath)" == "$mount_home/custom-hooks" ]]
+HOME="$mount_home" git config --file "$included" core.hooksPath '~/.codex/git-hooks'
+expect_failure check-rejects-included-legacy-alias env HOME="$mount_home" \
+  bash "$mount_repo/scripts/distribute.sh" --check
+[[ "$(HOME="$mount_home" git config --file "$included" --get core.hooksPath)" == '~/.codex/git-hooks' ]]
+HOME="$mount_home" git config --global --unset include.path
+chmod -x "$mount_home/.codex/git-hooks/commit-msg"
+expect_failure check-rejects-missing-executable-bit env HOME="$mount_home" \
+  bash "$mount_repo/scripts/distribute.sh" --check
+
+latest_backup="$(ls -1d "$rollback_home/.codex/.gov-backup"/*/ | LC_ALL=C sort | tail -1)"
+expected_sentinel='preserve on damaged rollback'
+printf '%s\n' "$expected_sentinel" >"$rollback_home/.codex/AGENTS.md"
+rm -f "$latest_backup/1"
+expect_failure reject-incomplete-backup env HOME="$rollback_home" bash "$rollback_repo/scripts/distribute.sh" --rollback
+[[ "$(<"$rollback_home/.codex/AGENTS.md")" == "$expected_sentinel" ]]
 
 if (( failures > 0 )); then
   printf '%d distribution checks failed.\n' "$failures" >&2

@@ -68,6 +68,16 @@ else
   printf 'PASS check drift\n'
 fi
 
+git -C "$TEST_ROOT/hengqin-desktop" init -q
+if bash "$SCRIPT" --root "$TEST_ROOT" >"$TEST_ROOT/refuses-local-changes.out" 2>&1 ||
+  ! grep -q '未提交或未跟踪内容' "$TEST_ROOT/refuses-local-changes.out" ||
+  ! grep -q '^drift$' "$TEST_ROOT/hengqin-desktop/AI-GOVERNANCE.md"; then
+  printf 'FAIL refuses uncommitted project snapshot\n' >&2
+  failures=$((failures + 1))
+else
+  printf 'PASS refuses uncommitted project snapshot\n'
+fi
+
 if (( failures > 0 )); then
   printf '%d sync-project-governance checks failed.\n' "$failures" >&2
   exit 1

@@ -1,4 +1,5 @@
 import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -9,18 +10,23 @@ from pathlib import Path
 from uuid import uuid4
 
 
-def path_key(path):
+def path_key(path, *, ignore_executable=os.name == "nt"):
     """Fingerprint a path without following links, including dangling links."""
     try:
-        mode = path.lstat().st_mode
+        info = path.lstat()
+        mode = info.st_mode
     except FileNotFoundError:
         return None
     if stat.S_ISLNK(mode):
         return ["link", str(path.readlink())]
+    if os.name == "nt" and info.st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+        raise ValueError(f"不支持的 Windows 重解析点: {path}")
     if stat.S_ISREG(mode):
-        return ["file", hashlib.sha256(path.read_bytes()).hexdigest(), mode & 0o111]
+        executable = 0 if ignore_executable else mode & 0o111
+        return ["file", hashlib.sha256(path.read_bytes()).hexdigest(), executable]
     if stat.S_ISDIR(mode):
-        entries = [[child.name, path_key(child)] for child in sorted(path.iterdir())]
+        entries = [[child.name, path_key(child, ignore_executable=ignore_executable)]
+                   for child in sorted(path.iterdir(), key=lambda child: child.name)]
         return ["directory", hashlib.sha256(json.dumps(entries).encode()).hexdigest()]
     raise ValueError(f"不支持的文件类型: {path}")
 
@@ -44,6 +50,9 @@ def copy_path(source, destination):
 
 def publish_path(staged, destination):
     """Move atomically without silently replacing an external writer's path."""
+    if os.name == "nt":
+        os.rename(staged, destination)
+        return
     libc = ctypes.CDLL(None, use_errno=True)
     source, target = os.fsencode(staged), os.fsencode(destination)
     if sys.platform == "darwin":
@@ -57,6 +66,23 @@ def publish_path(staged, destination):
     if result:
         error = ctypes.get_errno()
         raise OSError(error, os.strerror(error), str(destination))
+
+
+def lock_file(lock):
+    if os.name == "nt":
+        import msvcrt
+
+        lock.seek(0)
+        try:
+            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError as error:
+            if error.errno not in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
+                raise
+            raise BlockingIOError(error.errno, error.strerror) from error
+    else:
+        import fcntl
+
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
 def write_json(path, data):

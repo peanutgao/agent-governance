@@ -37,6 +37,10 @@ make_fixture() {
   printf 'baseline tests\n' >"$repo/tests/placeholder.sh"
   printf '%s\n' "$initial_version" >"$repo/VERSION"
 
+  case "$(uname -s)" in
+    MINGW*|MSYS*) printf 'global/AGENTS.md\n' > "$repo/AGENTS.md" ;;
+    *) ln -s global/AGENTS.md "$repo/AGENTS.md" ;;
+  esac
   git -C "$repo" add .
   git -C "$repo" commit -q -m "chore: baseline"
 
@@ -83,6 +87,11 @@ expect_version_result same-version 1 "$same_version_repo"
 expect_version_result invalid-format 1 "$invalid_format_repo"
 expect_version_result non-monotonic 1 "$non_monotonic_repo"
 expect_version_result extra-text 1 "$extra_text_repo"
+
+printf 'unreleased rule\n' >>"$valid_repo/global/AGENTS.md"
+git -C "$valid_repo" add global/AGENTS.md
+git -C "$valid_repo" commit -q -m 'docs: edit rule without version bump'
+expect_version_result changed-rules-without-version 1 "$valid_repo"
 
 if (( failures > 0 )); then
   printf '%d version checks failed.\n' "$failures" >&2

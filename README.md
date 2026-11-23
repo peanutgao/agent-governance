@@ -1,6 +1,6 @@
 # agent-governance — 个人多设备 AI 开发约束
 
-个人跨设备共享的全局 AI 开发约束仓库。每台设备拉取本仓后执行 `scripts/distribute.sh`，更新本机的全局 AI 约束。
+个人跨设备共享的全局 AI 开发约束仓库。macOS、Linux 和 Windows 原生的新机入口见 [一键部署](onboarding.md#新设备一键部署)。已经拉取本仓的设备可执行 `bash scripts/install.sh`，安装全局 AI 约束和常用 Skills。
 
 项目级约束、架构、Spec、Contract、测试和发布说明由各项目仓库自己维护。本仓库不收集项目代码，也不替项目维护项目级 AI 约束。
 
@@ -14,6 +14,7 @@ global/
 └── git-hooks/                         # 全局 git 钩子（commit-msg 归属门禁 + 转发层）
 onboarding.md                          # 多设备初始化和更新
 templates/project/AI-GOVERNANCE.md      # 项目仓库携带的公共治理快照模板
+scripts/install.sh                     # 安装全局规则和清单中的 Skills
 scripts/distribute.sh                  # 分发全局入口（--check / --rollback / --list-targets）
 scripts/sync-project-governance.sh     # 从模板生成三仓 AI-GOVERNANCE.md（--check）
 scripts/check-commit-attribution.sh    # commit 归属检查（--governance / --print-policy）
@@ -26,14 +27,14 @@ VERSION                                # 基线版本号
 
 ## 分发目标
 
-`~/.codex/AGENTS.md` 是本机唯一真源副本，其余工具入口都是指向它的软链，避免多份内容各自漂移：
+`~/.codex/AGENTS.md` 是全局规则的真源副本。下表标为软链的入口在 macOS/Linux 指向真源，在 Windows 上由分发器写入普通副本。
 
 | 工具 | 本机路径 | 方式 |
 |---|---|---|
 | Codex | `~/.codex/AGENTS.md` | 内容副本（真源） |
 | Codex | `~/.codex/ai-change-implementation-prompt.md` | 内容副本 |
 | Codex | `~/.codex/check-commit-attribution.sh` | 内容副本，可复制进项目仓库 |
-| 所有工具 | `~/.codex/git-hooks/`（`commit-msg` / `_chain` / `pre-commit` / `pre-push`） | 内容副本 + 可执行位 |
+| 所有工具 | `~/.codex/git-hooks/`（旧版 `commit-msg` 及兼容转发文件） | 内容副本 + 可执行位 |
 | Claude Code | `~/.claude/CLAUDE.md` | 软链 |
 | pi | `~/.pi/agent/AGENTS.md` | 软链 |
 | opencode | `~/.config/opencode/AGENTS.md` | 软链 |
@@ -52,46 +53,44 @@ WorkBuddy 需要单独处理：它的用户级规则是 `<configDir>/rules/*.md`
 
 ## Git 归属的执行点
 
-规则文本不会自己拦提交。真正让「Git 归属」生效的是 `~/.codex/git-hooks/commit-msg`，分发脚本把它挂成全局 `core.hooksPath`（仅在本机尚未设置时写入，已有值不覆盖）：
+项目在自身 `commit-msg` 的最后一步接入归属检查器，由 CI 对新增提交再次校验。这样 Git 继续按原有配置选择项目钩子，项目可以在检查前完成提交消息的改写。
 
-- 每次 `git commit` 先跑 `check-commit-attribution.sh`，`Co-Authored-By`、AI 身份、以及「由 AI 生成」类 message 一律拒绝；
-- 检查器缺失时**失败关闭**（拒绝提交），不静默放行；
-- `core.hooksPath` 是整体替换，所以 `commit-msg` / `pre-commit` / `pre-push` 都会先把控制权转回仓库自己的 `.git/hooks/<同名>`，项目原有 husky / lint 钩子不会被静默关掉；
-- 仓库自己设了 `core.hooksPath`（husky 等）时全局值不生效——这类仓库需要把 `~/.codex/git-hooks/commit-msg` 接进它自己的钩子链；
-- `--rollback` 只回滚文件，不动 git 配置；撤销挂载用 `git config --global --unset core.hooksPath`。
+- 分发迁移旧版由治理仓直接写入的全局 `core.hooksPath`，保留其他 Git 配置。来自系统配置或包含文件的旧覆盖会报出，需在其来源处理。
+- 已接入 `~/.codex/git-hooks/commit-msg` 的项目可以保留该入口。新接入建议直接调用下方的检查器命令。
+- `--check` 校验受管文件、执行位和旧全局覆盖。项目的执行链与 CI 须分别验证。
 
-治理仓自己不受这套全局钩子约束：它在本地把 `core.hooksPath` 指向 `.githooks`，用 `--governance` 模式描述本政策。
+治理仓在本地把 `core.hooksPath` 指向 `.githooks`，用 `--governance` 模式描述本政策。
 
 ## 修改全局约束
 
 1. 修改 `global/`、分发脚本、检查脚本或测试。
 2. **bump `VERSION`**（严格递增的 SemVer）。
-3. 运行 `bash tests/run-all.sh`。
+3. 先跑相关回归。获得全量测试授权后，运行 `bash tests/run-all.sh`；CI 还会核对当前提交的版本与规则树。
 4. 提交并推送；其他设备执行 `git pull` 和 `bash scripts/distribute.sh`。
 
 ## 分发到设备
 
 ```bash
 bash scripts/distribute.sh
-bash scripts/distribute.sh --check          # 校验本机副本是否仍等于源文件
+bash scripts/distribute.sh --check          # 比对当前工作树、执行位和旧全局覆盖
 bash scripts/distribute.sh --list-targets   # 只看目标清单，不安装
 ```
 
-分发门禁，任一不过就中止，且不写任何文件：
+分发门禁失败时中止，受管副本保持原状：
 
 1. 规则路径无未提交改动；
-2. `VERSION` 格式合法、比上一版本递增，且其提交包含所有规则路径的最近一次提交；
+2. `VERSION` 格式合法并递增，其提交包含规则修改，最终规则树与该提交一致；
 3. 本地检查：脚本语法 + 非递归测试套件（`tests/distribute.sh` 自身不参与，避免递归）；
-4. 本地仓不落后 origin。**origin 存在但 fetch 失败一律失败关闭**——绝不把本地旧内容装成「已是最新」。
+4. 配置了 origin 时，必须能 fetch 并找到跟踪分支或远端默认分支，且本地仓不落后该分支。
 
 安装规则：
 
-- 受管 `copy` 路径若是软链接，直接拒绝安装（避免顺着链接写到链接目标）；先删链接或改回普通文件。
+- 安装、回滚和校验均预检目标类型、父目录及重复或嵌套路径。受管普通文件拒绝软链，约定为软链的工具入口可以保留链接。若显式允许外部目标，仍须使用无跳转且父目录为普通目录的绝对路径。
 - 安装前对全部受管路径 + `.gov-version` 做一次**整组快照**，存于 `~/.codex/.gov-backup/<时间戳>/`。
 - 内容一致时跳过，不产生冗余快照；不一致时先快照当前状态再覆盖。
 - 软链目标若原是普通文件，同样随整组快照保存后再替换为软链。
 
-回滚到最近一次分发前的整组状态（不是按文件各取一份备份）：
+回滚到最近一次分发前的整组状态。若分发中断，确认操作已经退出后再处理遗留锁目录：
 
 ```bash
 bash scripts/distribute.sh --rollback
@@ -99,7 +98,7 @@ bash scripts/distribute.sh --rollback
 
 ## 全局 Skills
 
-在治理仓执行 `python3 scripts/skills.py plan` 预览当前设备。同步、冲突接管和回退说明见 [全局 Skills 使用说明](skills/README.md)。
+统一安装先分发规则，再同步 [Skills 清单](skills/manifest.json)。安装条件、同步目标、冲突接管和回退见 [全局 Skills 使用说明](skills/README.md)。如果规则已分发而 Skills 同步失败，解决同步错误后可单独重跑 `python3 scripts/skills.py sync`。
 
 ## 项目级 AI 约束
 
@@ -107,10 +106,10 @@ bash scripts/distribute.sh --rollback
 
 项目级文件负责项目专属内容，例如技术栈、目录、构建命令、模块边界、业务规则和发布流程；不要把这些内容写进本仓的全局规则。
 
-项目仓库的 `AI-GOVERNANCE.md` 是本仓 `templates/project/AI-GOVERNANCE.md` 的生成物，不是第二份可手改真源。改公共治理规则时：
+项目仓库的 `AI-GOVERNANCE.md` 是本仓 `templates/project/AI-GOVERNANCE.md` 的生成物，不是第二份可手改真源。公共规则合入治理仓并发布相应版本后，更新消费项目的快照。向 Git 项目写入时会检查已获取的 origin 默认分支和现有快照的 Git 状态。
 
 ```bash
-# 1. 修改模板 / global 规则，bump VERSION
+# 1. 在治理仓发布已通过检查的新版本
 # 2. 从模板重新生成三仓快照
 bash scripts/sync-project-governance.sh
 # 3. 只校验不写入
@@ -125,7 +124,8 @@ bash scripts/sync-project-governance.sh --check
 
 ```bash
 cp ~/.codex/check-commit-attribution.sh <project>/scripts/
-bash ~/.codex/check-commit-attribution.sh --print-policy   # 查看当前拦截清单
+# 项目 commit-msg 的最后一步，在项目改写消息后执行
+exec bash "$repo_root/scripts/check-commit-attribution.sh" --message "$1"
 ```
 
 治理仓自身描述这条政策的提交用 `--governance` 模式（只查 trailer 与身份，跳过 message 披露短语）。
@@ -137,7 +137,7 @@ bash ~/.codex/check-commit-attribution.sh --print-policy   # 查看当前拦截�
 ```bash
 cd agent-governance
 git pull --ff-only
-bash scripts/distribute.sh
+bash scripts/install.sh
 ```
 
 首次使用见 [`onboarding.md`](onboarding.md)。本仓不保存设计文档或历史资料；规则、脚本和检查的当前行为以代码、测试和提交历史为准。

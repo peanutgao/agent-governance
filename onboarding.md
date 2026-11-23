@@ -1,23 +1,46 @@
 # 多设备使用说明
 
-`agent-governance` 是个人跨设备共享的全局 AI 开发约束仓库。每台设备只需要拉取本仓并运行分发脚本，不需要把项目代码复制到本仓。
+`agent-governance` 是个人跨设备共享的全局 AI 开发约束仓库。每台设备拉取本仓并运行安装脚本，即可部署全局规则和常用 Skills。
 
-## 新设备
+## 新设备一键部署
+
+部署入口安装全局规则、清单中的 Skills，以及安装所需的 Git、Python 和 Node.js/npm。运行时可用时直接复用，否则用 conda-forge 在当前用户目录创建专用运行时。支持 macOS、Linux 和 Windows 原生的 x64、ARM64。首次部署需要访问 GitHub、conda-forge 和 npm。
+
+**macOS / Linux** 在终端粘贴整段。系统需能运行 Bash、curl、tar，解包可用 bzip2 并支持 SHA-256 校验。
 
 ```bash
-git clone <agent-governance-repository-url>
-cd agent-governance
-git config core.hooksPath .githooks   # 启用治理仓 commit-msg 检查
-bash scripts/distribute.sh
+(
+  launcher="$(mktemp)" || exit 1
+  trap 'rm -f "$launcher"' EXIT
+  curl -fsSL --proto '=https' https://raw.githubusercontent.com/peanutgao/agent-governance/main/scripts/bootstrap.sh -o "$launcher" &&
+    bash "$launcher"
+)
 ```
 
-分发脚本会安装（`~/.codex/AGENTS.md` 是唯一真源副本，其余工具入口都是指向它的软链）：
+**Windows 原生** 在 PowerShell（5.1 或更新版本）粘贴整段。系统需提供 Windows tar，部署不要求管理员权限或开发者模式。
+
+```powershell
+$launcher = Join-Path ([System.IO.Path]::GetTempPath()) ("agent-governance-" + [guid]::NewGuid().ToString("N") + ".ps1")
+try {
+    Invoke-WebRequest -UseBasicParsing -ErrorAction Stop -Uri "https://raw.githubusercontent.com/peanutgao/agent-governance/main/scripts/bootstrap.ps1" -OutFile $launcher
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File $launcher
+    if ($LASTEXITCODE -ne 0) { throw "部署失败，退出码 $LASTEXITCODE" }
+} finally {
+    if (Test-Path -LiteralPath $launcher) { Remove-Item -LiteralPath $launcher }
+}
+```
+
+两种入口都从 GitHub 的 `main` 拉取完整仓库到用户目录下的 `.local/share/agent-governance/bootstrap/repo`。再次运行同一命令会快进更新并分发。AI 客户端由设备自行安装。PowerShell 执行策略仅对上面启动的子进程生效。
+
+已经自行克隆仓库且运行时齐备时，可以从仓库根目录直接运行 `bash scripts/install.sh`。Windows 从 PowerShell 运行 `scripts/bootstrap.ps1`，可一并准备所需运行时。
+
+安装脚本先分发以下全局规则，再把 [清单中的 Skills](skills/manifest.json) 同步到 [各工具的全局 Skills 目录](skills/README.md#分发路径)。首次安装的依赖见 [Skills 使用说明](skills/README.md)。
 
 - `~/.codex/AGENTS.md`：全局通用 AI 开发约束；
 - `~/.codex/ai-change-implementation-prompt.md`：复杂任务按需读取的详细流程；
 - `~/.codex/check-commit-attribution.sh`：commit 归属检查器，可复制进项目仓库；
-- `~/.codex/git-hooks/`：全局 git 钩子（`commit-msg` 归属门禁 + `pre-commit` / `pre-push` 转发层），分发脚本会把它挂成全局 `core.hooksPath`（本机已有该配置时不覆盖）；
-- `~/.claude/CLAUDE.md`、`~/.pi/agent/AGENTS.md`、`~/.config/opencode/AGENTS.md`、`~/.dsh/AGENTS.md`、`~/.commandcode/AGENTS.md`、`~/.omp/agent/AGENTS.md`：软链到真源；
+- `~/.codex/git-hooks/`：旧全局钩子兼容文件。分发移除旧版直接挂载的治理路径，保留项目和其他来源的 Git 配置；
+- `~/.claude/CLAUDE.md`、`~/.pi/agent/AGENTS.md`、`~/.config/opencode/AGENTS.md`、`~/.dsh/AGENTS.md`、`~/.commandcode/AGENTS.md`、`~/.omp/agent/AGENTS.md`：Unix 上是指向真源的软链，Windows 上是普通文件副本；
 - `~/.workbuddy-ai/rules/agent-governance.md`：WorkBuddy 用户级规则（带 frontmatter，是生成文件不是软链）；
 - `~/.codex/.gov-version`：已安装版本号。
 
@@ -36,7 +59,7 @@ bash scripts/distribute.sh
 ```bash
 cd agent-governance
 git pull --ff-only
-bash scripts/distribute.sh
+bash scripts/install.sh
 ```
 
 如果分发脚本提示规则文件有未提交修改，先检查本机是否手工编辑过治理源文件；不要用本机副本覆盖治理仓规则。
@@ -44,14 +67,14 @@ bash scripts/distribute.sh
 ## 本地校验与回滚
 
 ```bash
-bash tests/run-all.sh                      # 全部测试套件
+bash tests/run-all.sh                     # 已明确授权时执行全部测试套件
 bash scripts/distribute.sh --list-targets  # 只看目标清单，不安装
 bash scripts/distribute.sh --rollback      # 回到最近一次分发前的整组状态
 ```
 
 分发门禁包含「本地仓不落后 origin」：origin 存在但 fetch 失败会直接中止，不会把本地旧规则装成「已是最新」。
 
-`--rollback` 只回滚分发文件，不回滚 git 配置。撤销全局钩子挂载：`git config --global --unset core.hooksPath`；重新启用再跑一次 `bash scripts/distribute.sh`。
+`--check` 校验副本、钩子执行位及旧全局覆盖。各项目需接入自己的提交归属检查。`--rollback` 先核对完整快照，恢复文件并保留现有 Git 配置。
 
 ## 使用项目
 

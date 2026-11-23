@@ -2,7 +2,6 @@
 """Synchronize the governance repository's global Skills allowlist."""
 
 import argparse
-import fcntl
 import os
 import re
 import shutil
@@ -15,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 sys.dont_write_bytecode = True
-from skills_store import Store, content_key, inside, path_key, read_json
+from skills_store import Store, content_key, inside, lock_file, path_key, read_json
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -74,16 +73,38 @@ def load_skills():
             local = SOURCE_ROOT / "local" / name
             skills.append(Skill(name, source, local, skill_key(local, name)))
             continue
+        path = source["path"]
+        upstream_name = source.get("upstreamName", name)
         if (
             source["type"] != "github"
             or not re.fullmatch(r"[a-zA-Z0-9][\w.-]*/[a-zA-Z0-9][\w.-]*", source["repo"], re.ASCII)
             or not re.fullmatch(r"[0-9a-f]{40}", source["commit"])
             or not re.fullmatch(r"[0-9a-f]{64}", source["digest"])
-            or not re.fullmatch(rf"(?:[\w-]+/)+{re.escape(name)}", source["path"], re.ASCII)
+            or not NAME.fullmatch(upstream_name)
+            or (path != "." and (
+                "upstreamName" in source
+                or not re.fullmatch(rf"(?:[\w-]+/)+{re.escape(name)}", path, re.ASCII)
+            ))
         ):
             raise ValueError(f"无效的锁定来源: {name}")
-        skills.append(Skill(name, source, None, ["directory", source["digest"]]))
+        windows_digest = source.get("windowsDigest", source["digest"])
+        if not re.fullmatch(r"[0-9a-f]{64}", windows_digest):
+            raise ValueError(f"无效的 Windows 摘要: {name}")
+        digest = windows_digest if os.name == "nt" else source["digest"]
+        skills.append(Skill(name, source, None, ["directory", digest]))
     return skills, manifest.get("registryCli")
+
+
+def npm_command():
+    if os.name != "nt":
+        return ["npm"]
+    npm = shutil.which("npm.cmd")
+    node = shutil.which("node.exe")
+    if npm and node:
+        cli = Path(npm).with_name("node_modules") / "npm" / "bin" / "npm-cli.js"
+        if cli.is_file():
+            return [node, str(cli)]
+    raise ValueError("找不到 Windows Node.js/npm 安装，请使用 PowerShell 部署入口。")
 
 
 def prepare_sources(skills, cli, stage, proxy):
@@ -103,19 +124,38 @@ def prepare_sources(skills, cli, stage, proxy):
         work.mkdir()
         checkout = work / "checkout"
         extract_release(repo, commit, {skill.source["path"] for skill in entries}, checkout, proxy)
+        upstream_names = [skill.source.get("upstreamName", skill.name) for skill in entries]
         subprocess.run(
-            ["npm", "exec", "--yes", f"--package=skills@{cli}", "--", "skills", "add",
+            [*npm_command(), "exec", "--yes", f"--package=skills@{cli}", "--", "skills", "add",
              str(checkout),
-             "--skill", *(skill.name for skill in entries), "--agent", "codex", "--yes", "--copy"],
+             "--skill", *upstream_names, "--agent", "codex", "--yes", "--copy"],
             cwd=work, env={**os.environ, "DISABLE_TELEMETRY": "1", "NPM_CONFIG_IGNORE_SCRIPTS": "true"},
             check=True, timeout=65,
         )
-        for skill in entries:
-            sources[skill.name] = work / ".agents" / "skills" / skill.name
+        for skill, upstream_name in zip(entries, upstream_names):
+            source = work / ".agents" / "skills" / upstream_name
+            if upstream_name != skill.name:
+                destination = stage / skill.name
+                shutil.copytree(source, destination, symlinks=True)
+                rename_skill(destination / "SKILL.md", upstream_name, skill.name)
+                source = destination
+            sources[skill.name] = source
     for skill in skills:
         if skill_key(sources[skill.name], skill.name) != skill.key:
             raise ValueError(f"Skill 文件与规划摘要不一致: {skill.name}")
     return sources
+
+
+def rename_skill(entry, upstream_name, name):
+    if entry.is_symlink():
+        raise ValueError(f"Skill 清单不能是软链: {entry}")
+    metadata, delimiter, body = entry.read_text(encoding="utf-8").partition("\n---\n")
+    names = re.findall(r"^name:[ \t]*([^\n]*?)[ \t]*$", metadata, re.MULTILINE)
+    if not metadata.startswith("---\n") or not delimiter or names != [upstream_name]:
+        raise ValueError(f"无法核对上游 Skill 名称: {entry}")
+    metadata = re.sub(r"^name:[^\n]*$", f"name: {name}", metadata, flags=re.MULTILINE)
+    with entry.open("w", encoding="utf-8", newline="\n") as stream:
+        stream.write(metadata + delimiter + body)
 
 
 def extract_release(repo, commit, skill_paths, checkout, proxy):
@@ -131,7 +171,9 @@ def extract_release(repo, commit, skill_paths, checkout, proxy):
     with tarfile.open(archive) as bundle:
         for member in bundle:
             root, _, relative = member.name.partition("/")
-            if root != prefix or not any(relative.startswith(path + "/") for path in skill_paths):
+            if root != prefix or not relative:
+                continue
+            if "." not in skill_paths and not any(relative.startswith(path + "/") for path in skill_paths):
                 continue
             parts = PurePosixPath(relative)
             if parts.is_absolute() or ".." in parts.parts:
@@ -274,8 +316,8 @@ def main():
             ))
 
         state_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        with (state_root / "lock").open("a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with (state_root / "lock").open("a+b") as lock:
+            lock_file(lock)
             store.recover()
             state = store.state()
             if args.command == "rollback":

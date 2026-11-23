@@ -12,15 +12,25 @@
 #   2. 门禁：本地检查（bash -n + 非递归测试套件）
 #   3. 门禁：本地仓不落后 origin（有 remote 时）。origin 存在但 fetch 失败一律失败关闭，
 #      绝不「装本地旧内容还显示已是最新」
-#   4. 受管路径若为软链接则拒绝安装（避免顺着链接写坏用户文件）
+#   4. 安装前校验受管目标类型、父目录和冲突，并阻止并行分发
 #   5. 安装前对全部受管路径 + .gov-version 做一次整组快照，内容一致时跳过
 #   6. 绝不触碰 settings.json / settings.local.json / 个人 memory / auth / token
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+_self="${BASH_SOURCE[0]:-}"
+[[ -f "$_self" ]] || _self="$0"
+REPO_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
 GLOBAL_DIR="$REPO_DIR/global"
 VERSION_FILE="$REPO_DIR/VERSION"
-PREFIX="$HOME/.codex"
+DEVICE_HOME="$HOME"
+native_windows=0
+case "$(uname -s)" in
+  MINGW*|MSYS*)
+    native_windows=1
+    DEVICE_HOME="$(cygpath -u "$USERPROFILE")"
+    ;;
+esac
+PREFIX="$DEVICE_HOME/.codex"
 CANONICAL_AGENTS="$PREFIX/AGENTS.md"
 HOOKS_DIR="$PREFIX/git-hooks"
 BACKUP_ROOT="$PREFIX/.gov-backup"
@@ -29,15 +39,31 @@ WORKBUDDY_RULE_NAME="agent-governance.md"
 # 允许 HOME 之外的受管目录：默认关闭，防止测试或误设环境变量写到真实用户目录。
 ALLOW_EXTERNAL_TARGETS="${AGENT_GOVERNANCE_ALLOW_EXTERNAL_TARGETS:-0}"
 
+safe_path_syntax() {
+  case "$1/" in
+    *'/../'*|*'/./'*|*'//'*|*'|'*|*$'\t'*|*$'\n'*|*$'\r'*) return 1 ;;
+    /*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # --- 目标目录解析 ---------------------------------------------------------
-# 环境变量只在其位于 $HOME 之下时才被采用；否则回退到 HOME 下的默认位置并告警。
+# 环境变量只在其位于 $DEVICE_HOME 之下时才被采用；否则回退到 HOME 下的默认位置并告警。
 resolve_target_dir() {
   local from_env="$1"
   local fallback="$2"
   local label="$3"
 
   if [[ -n "$from_env" ]]; then
-    if [[ "$from_env" == "$HOME"/* || "$ALLOW_EXTERNAL_TARGETS" == "1" ]]; then
+    if [[ "$native_windows" == 1 ]]; then
+      from_env="$(cygpath -au "$from_env")"
+    fi
+    from_env="${from_env%/}"
+    if ! safe_path_syntax "$from_env"; then
+      printf '错误: %s 必须是无路径跳转的绝对目录。\n' "$label" >&2
+      return 1
+    fi
+    if [[ "$from_env" == "$DEVICE_HOME"/* || "$ALLOW_EXTERNAL_TARGETS" == "1" ]]; then
       printf '%s\n' "$from_env"
       return 0
     fi
@@ -47,19 +73,19 @@ resolve_target_dir() {
   printf '%s\n' "$fallback"
 }
 
-PI_AGENT_DIR="$HOME/.pi/agent"
-OMP_AGENT_DIR="$HOME/.omp/agent"
-OPENCODE_DIR="$HOME/.config/opencode"
-COMMANDCODE_DIR="$HOME/.commandcode"
-DSH_DIR="$(resolve_target_dir "${DSH_HOME:-}" "$HOME/.dsh" "DSH_HOME")"
-WORKBUDDY_DIR="$(resolve_target_dir "${WORKBUDDY_CONFIG_DIR:-}" "$HOME/.workbuddy-ai" "WORKBUDDY_CONFIG_DIR")"
+PI_AGENT_DIR="$DEVICE_HOME/.pi/agent"
+OMP_AGENT_DIR="$DEVICE_HOME/.omp/agent"
+OPENCODE_DIR="$DEVICE_HOME/.config/opencode"
+COMMANDCODE_DIR="$DEVICE_HOME/.commandcode"
+DSH_DIR="$(resolve_target_dir "${DSH_HOME:-}" "$DEVICE_HOME/.dsh" "DSH_HOME")"
+WORKBUDDY_DIR="$(resolve_target_dir "${WORKBUDDY_CONFIG_DIR:-}" "$DEVICE_HOME/.workbuddy-ai" "WORKBUDDY_CONFIG_DIR")"
 WORKBUDDY_RULE_PATH="$WORKBUDDY_DIR/rules/$WORKBUDDY_RULE_NAME"
 
 # OrbStack 等虚拟机把本机 work 目录共享进 VM 后，VM 内的 AI 工具（如 Claude Code）
 # 读不到宿主机的 ~/.claude / ~/.codex 用户级入口；work 根目录的 CLAUDE.md 是它们经
 # 挂载能看到的唯一祖先约束入口。用普通文件副本而非软链：不依赖 VM 侧是否也共享 home，
 # 对任何挂载拓扑都成立。Claude Code 会从 cwd 向上逐级读取祖先目录的 CLAUDE.md。
-WORK_SHARE_DIR="$HOME/Documents/work"
+WORK_SHARE_DIR="$DEVICE_HOME/Documents/work"
 
 # --- 目标定义 -------------------------------------------------------------
 # copy  ：内容来自仓库源文件，逐字节比对；受管路径为软链接时拒绝安装。
@@ -77,13 +103,20 @@ COPY_SOURCES=(
 )
 
 LINK_TARGETS=(
-  "$HOME/.claude/CLAUDE.md|Claude Code"
+  "$DEVICE_HOME/.claude/CLAUDE.md|Claude Code"
   "$PI_AGENT_DIR/AGENTS.md|pi"
   "$OMP_AGENT_DIR/AGENTS.md|omp"
   "$OPENCODE_DIR/AGENTS.md|opencode"
   "$DSH_DIR/AGENTS.md|DeepSeek Harness"
   "$COMMANDCODE_DIR/AGENTS.md|commandcode"
 )
+
+if [[ "$native_windows" == 1 ]]; then
+  for entry in "${LINK_TARGETS[@]}"; do
+    COPY_SOURCES+=("global/AGENTS.md|${entry%|*}")
+  done
+  LINK_TARGETS=()
+fi
 
 # WorkBuddy 读取用户级规则的路径与上限，来自其运行时实现：
 #   <configDir>/rules/*.md，frontmatter alwaysApply 为真即全量注入；
@@ -98,6 +131,112 @@ for entry in "${LINK_TARGETS[@]}"; do
   MANAGED_PATHS+=("${entry%|*}")
 done
 MANAGED_PATHS+=("$WORKBUDDY_RULE_PATH" "$PREFIX/.gov-version")
+
+lock_dir=
+workbuddy_tmp=
+staged_file=
+pending_snapshot=
+release_root=
+cleanup() {
+  [[ -z "$staged_file" ]] || rm -f "$staged_file"
+  [[ -z "$workbuddy_tmp" ]] || rm -f "$workbuddy_tmp"
+  [[ -z "$pending_snapshot" ]] || rm -rf "$pending_snapshot"
+  [[ -z "$release_root" ]] || rm -rf "$release_root"
+  [[ -z "$lock_dir" ]] || rmdir "$lock_dir"
+}
+trap cleanup EXIT
+
+validate_parent() {
+  local path="$1" parent
+  safe_path_syntax "$path" || return 1
+  [[ "$path" == "$DEVICE_HOME"/* || "$ALLOW_EXTERNAL_TARGETS" == "1" ]] || return 1
+  parent="$(dirname "$path")"
+  while [[ "$parent" != "$DEVICE_HOME" && "$parent" != / ]]; do
+    if [[ -L "$parent" || ( -e "$parent" && ! -d "$parent" ) ]]; then
+      printf '错误: 受管路径的父目录不是普通目录: %s\n' "$parent" >&2
+      return 1
+    fi
+    parent="$(dirname "$parent")"
+  done
+}
+
+validate_target() {
+  local path="$1" allow_link="$2"
+  validate_parent "$path" || return 1
+  if [[ -L "$path" ]]; then
+    [[ "$allow_link" == 1 ]] && return 0
+  elif [[ ! -e "$path" || -f "$path" ]]; then
+    return 0
+  fi
+  printf '错误: 受管目标类型不安全: %s\n' "$path" >&2
+  return 1
+}
+
+preflight() (
+  shopt -s nocasematch
+  local i j entry
+  for i in "${!MANAGED_PATHS[@]}"; do
+    for ((j = 0; j < i; j++)); do
+      if [[ "${MANAGED_PATHS[$i]}" == "${MANAGED_PATHS[$j]}" ||
+        "${MANAGED_PATHS[$i]}" == "${MANAGED_PATHS[$j]}/"* ||
+        "${MANAGED_PATHS[$j]}" == "${MANAGED_PATHS[$i]}/"* ]]; then
+        printf '错误: 受管目标冲突: %s 与 %s\n' "${MANAGED_PATHS[$i]}" "${MANAGED_PATHS[$j]}" >&2
+        return 1
+      fi
+    done
+  done
+  for entry in "${COPY_SOURCES[@]}"; do
+    validate_target "${entry#*|}" 0 || return 1
+  done
+  for entry in "${LINK_TARGETS[@]}"; do
+    validate_target "${entry%|*}" 1 || return 1
+  done
+  validate_target "$WORKBUDDY_RULE_PATH" 0 &&
+    validate_target "$PREFIX/.gov-version" 0 &&
+    validate_parent "$BACKUP_ROOT/manifest" || return 1
+  if [[ "$native_windows" == 1 ]]; then
+    python - "${MANAGED_PATHS[@]}" "$BACKUP_ROOT" <<'PY_WINDOWS'
+import stat
+import sys
+from pathlib import Path
+
+home = Path.home()
+for argument in sys.argv[1:]:
+    path = Path(argument)
+    for part in (path, *path.parents):
+        if part == home or part == Path(part.anchor):
+            break
+        try:
+            attributes = part.lstat().st_file_attributes
+        except FileNotFoundError:
+            continue
+        if attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            raise SystemExit(f"Windows deployment target is a reparse point: {part}")
+PY_WINDOWS
+  fi
+)
+
+acquire_lock() {
+  mkdir -p "$BACKUP_ROOT"
+  if ! mkdir "$BACKUP_ROOT/.lock"; then
+    printf '错误: 已有分发或回滚持锁，或上次操作异常退出，请核对进程后再处理锁目录。\n' >&2
+    return 1
+  fi
+  lock_dir="$BACKUP_ROOT/.lock"
+}
+
+install_copy() {
+  local source="$1" path="$2" executable="${3:-0}"
+  validate_target "$path" 0 || return 1
+  mkdir -p "$(dirname "$path")"
+  staged_file="$(mktemp "$(dirname "$path")/.governance.XXXXXX")"
+  cp -p "$source" "$staged_file"
+  if [[ "$executable" == 1 ]]; then
+    chmod +x "$staged_file"
+  fi
+  mv -f "$staged_file" "$path"
+  staged_file=
+}
 
 usage() {
   cat >&2 <<'USAGE'
@@ -119,11 +258,14 @@ check_installed() {
   for entry in "${COPY_SOURCES[@]}"; do
     src="$REPO_DIR/${entry%%|*}"
     dest="${entry#*|}"
-    if [[ ! -e "$dest" ]]; then
+    if [[ ! -f "$src" || ! -e "$dest" ]]; then
       printf '缺失  %s\n' "$dest" >&2
       drifts=$((drifts + 1))
     elif ! cmp -s "$src" "$dest"; then
       printf '不一致 %s  ←  %s\n' "$dest" "${entry%%|*}" >&2
+      drifts=$((drifts + 1))
+    elif [[ "$dest" == "$HOOKS_DIR/"* && ! -x "$dest" ]]; then
+      printf '不可执行 %s\n' "$dest" >&2
       drifts=$((drifts + 1))
     fi
   done
@@ -150,16 +292,20 @@ check_installed() {
   local latest installed=""
   latest="$(tr -d '[:space:]' <"$VERSION_FILE")"
   [[ -f "$PREFIX/.gov-version" ]] && installed="$(tr -d '[:space:]' <"$PREFIX/.gov-version")"
-  if [[ "$installed" != "$latest" ]]; then
+  if ! cmp -s "$PREFIX/.gov-version" "$VERSION_FILE"; then
     printf '版本  已装 %s / 最新 %s\n' "${installed:-<none>}" "$latest" >&2
     drifts=$((drifts + 1))
   fi
 
+  local legacy_ok=1
+  check_no_legacy_override || legacy_ok=0
   if (( drifts > 0 )); then
     printf '==> %d 处与治理仓 %s 不一致。修复：bash scripts/distribute.sh\n' "$drifts" "$latest" >&2
     return 1
   fi
-  printf '==> 全部受管副本与治理仓 %s 一致。\n' "$latest"
+  printf '==> 全部受管副本与当前工作树 %s 一致。\n' "$latest"
+  [[ "$legacy_ok" == 1 ]] || return 1
+  printf '==> Git 保留原有钩子选择。归属门禁须在各项目及其 CI 中验证。\n'
 }
 
 list_targets() {
@@ -172,64 +318,82 @@ list_targets() {
   done
   printf '  workbuddy %s  ←  global/AGENTS.md + frontmatter\n' "$WORKBUDDY_RULE_PATH"
   printf '  state     %s  （版本记录，供门禁与回滚使用）\n' "$PREFIX/.gov-version"
-  printf '  githook   git config --global core.hooksPath %s（仅在本机未设置时写入）\n' "$HOOKS_DIR"
+  printf '  git       检测并移除直接配置的旧治理目录覆盖 %s\n' "$HOOKS_DIR"
 }
 
 # --- 回滚 -----------------------------------------------------------------
 rollback() {
-  local latest
-  local restored=0
-  local index dest state source
-
+  preflight
   if [[ ! -d "$BACKUP_ROOT" ]]; then
-    printf '错误: 没有找到任何分发快照（%s）。\n' "$BACKUP_ROOT" >&2
+    printf '错误: 没有分发快照。\n' >&2
     return 1
   fi
-
-  latest="$(ls -1d "$BACKUP_ROOT"/*/ 2>/dev/null | sort | tail -1 || true)"
-  if [[ -z "$latest" ]]; then
-    printf '错误: 没有找到任何分发快照（%s）。\n' "$BACKUP_ROOT" >&2
-    return 1
-  fi
-
+  acquire_lock
+  check_no_legacy_override
+  local latest
+  latest="$(ls -1d "$BACKUP_ROOT"/[0-9]*/ 2>/dev/null | LC_ALL=C sort | tail -1 || true)"
   latest="${latest%/}"
-  if [[ ! -f "$latest/manifest" ]]; then
-    printf '错误: 快照缺少 manifest，拒绝回滚: %s\n' "$latest" >&2
+  if [[ -z "$latest" || -L "$latest" || ! -f "$latest/manifest" || -L "$latest/manifest" ]]; then
+    printf '错误: 未找到有效的快照清单。\n' >&2
     return 1
   fi
 
-  while IFS=$'\t' read -r index dest state; do
-    [[ -z "${dest:-}" ]] && continue
-    if [[ "$state" == "present" ]]; then
-      source="$latest/$index"
-      [[ -e "$source" || -L "$source" ]] || continue
-      rm -f "$dest"
-      mkdir -p "$(dirname "$dest")"
-      cp -a "$source" "$dest"
-      printf '    已回滚: %s\n' "$dest"
-      restored=$((restored + 1))
-    else
-      if [[ -e "$dest" || -L "$dest" ]]; then
-        rm -f "$dest"
-        printf '    已移除（快照中原本不存在）: %s\n' "$dest"
-        restored=$((restored + 1))
-      fi
+  local index dest state extra expected
+  local count=0
+  local -a states=()
+  while IFS=$'\t' read -r index dest state extra; do
+    expected="${MANAGED_PATHS[$count]:-}"
+    if [[ "$index" != "$count" || -z "$expected" || "$dest" != "$expected" || -n "$extra" ]]; then
+      printf '错误: 快照清单中的序号或目标无效: %s\n' "$latest/manifest" >&2
+      return 1
     fi
+    case "$state" in
+      present)
+        if [[ ! -f "$latest/$index" && ! -L "$latest/$index" ]]; then
+          printf '错误: 快照缺少备份文件: %s/%s\n' "$latest" "$index" >&2
+          return 1
+        fi
+        if [[ -L "$latest/$index" ]]; then
+          local link_entry found=0
+          for link_entry in "${LINK_TARGETS[@]}"; do
+            [[ "$dest" != "${link_entry%|*}" ]] || found=1
+          done
+          if [[ "$found" != 1 ]]; then
+            printf '错误: 非链接目标的备份是软链接: %s\n' "$dest" >&2
+            return 1
+          fi
+        fi
+        ;;
+      absent) ;;
+      *) printf '错误: 快照状态无效: %s\n' "$state" >&2; return 1 ;;
+    esac
+    states+=("$state")
+    count=$((count + 1))
   done <"$latest/manifest"
-
-  if (( restored == 0 )); then
-    printf '错误: 快照 %s 未包含任何可回滚内容。\n' "$latest" >&2
+  expected="${#MANAGED_PATHS[@]}"
+  if [[ "$count" != "$expected" ]]; then
+    printf '错误: 快照清单不完整，当前 %s 项，预期 %s 项。\n' "$count" "$expected" >&2
     return 1
   fi
 
-  local current_version="unknown"
-  if [[ -f "$PREFIX/.gov-version" ]]; then
-    current_version="$(tr -d '[:space:]' <"$PREFIX/.gov-version")"
-  fi
-  printf '==> 回滚完成（快照 %s）。当前版本: %s\n' "$(basename "$latest")" "$current_version"
-  printf '    全局 git 配置不在快照范围内；如需撤销钩子挂载:\n'
-  printf '    git config --global --unset core.hooksPath\n'
-  printf '    如需重新装到最新基线，再跑一次 bash scripts/distribute.sh。\n'
+  for index in "${!states[@]}"; do
+    dest="${MANAGED_PATHS[$index]}"
+    validate_target "$dest" 1
+    if [[ "${states[$index]}" == absent ]]; then
+      rm -f "$dest"
+    elif [[ -L "$latest/$index" ]]; then
+      mkdir -p "$(dirname "$dest")"
+      ln -sfn "$(readlink "$latest/$index")" "$dest"
+    else
+      # 被恢复的入口可能当前是受管软链。先去掉入口，再安全写入文件。
+      if [[ -L "$dest" ]]; then
+        rm -f "$dest"
+      fi
+      install_copy "$latest/$index" "$dest"
+    fi
+  done
+
+  printf '==> 回滚完成（快照 %s）。\n' "$(basename "$latest")"
 }
 
 # --- 门禁 -----------------------------------------------------------------
@@ -282,10 +446,13 @@ check_remote_freshness() {
   fi
 
   local upstream
-  upstream="$(git -C "$REPO_DIR" rev-parse --abbrev-ref '@{upstream}' 2>/dev/null || true)"
-  if [[ -z "$upstream" ]]; then
-    printf '    ⚠️ 当前分支没有 upstream，跳过落后检查。\n'
-    return 0
+  upstream="$(git -C "$REPO_DIR" rev-parse --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+  if [[ "$upstream" != refs/remotes/origin/* ]]; then
+    upstream="$(git -C "$REPO_DIR" symbolic-ref --quiet refs/remotes/origin/HEAD || true)"
+  fi
+  if [[ "$upstream" != refs/remotes/origin/* ]]; then
+    printf '错误: 无法确定 origin 的对照分支。\n' >&2
+    return 1
   fi
 
   local behind
@@ -298,34 +465,46 @@ check_remote_freshness() {
   return 0
 }
 
-# --- 全局 git 钩子挂载 -----------------------------------------------------
-# 规则文本本身不拦任何提交，check-commit-attribution.sh 只有在 git 调用它时才有
-# 作用。这里把 ~/.codex/git-hooks 挂成全局 core.hooksPath，让所有仓库的提交都先过
-# 归属检查。
-#
-# 只在自己没设过时才写：用户已有的 core.hooksPath（例如公司统一钩子目录）不覆盖，
-# 只提示怎么合并，避免为了装检查器改坏别人的钩子链。
-configure_global_hooks() {
-  local desired="$HOOKS_DIR"
-  local current
+# --- 迁移旧版全局钩子配置 --------------------------------------------------
+# 只从直接全局配置中删除旧版分发自己写入的字面值；包含文件和其他配置保持原状。
+configured_hooks_path() {
+  local value status
+  if value="$(git config --global --includes --path --get core.hooksPath)"; then
+    printf '%s\n' "$value"
+  else
+    status=$?
+    [[ "$status" == 1 ]] || return "$status"
+    if value="$(git config --system --includes --path --get core.hooksPath)"; then
+      printf '%s\n' "$value"
+    else
+      status=$?
+      [[ "$status" == 1 ]] || return "$status"
+    fi
+  fi
+}
 
-  current="$(git config --global --get core.hooksPath 2>/dev/null || true)"
-  if [[ "$current" == "$desired" ]]; then
-    printf '    ✓ 全局 git 钩子已挂载: core.hooksPath=%s\n' "$desired"
-    return 0
+check_no_legacy_override() {
+  local path
+  path="$(configured_hooks_path)" || return 1
+  if [[ "$path" == "$HOOKS_DIR" || ( -n "$path" && "$path" -ef "$HOOKS_DIR" ) ]]; then
+    printf '错误: Git 仍全局覆盖为旧治理目录 %s，项目原生钩子会受影响。\n' "$path" >&2
+    printf '直接旧配置可由分发迁移；若来自包含文件或系统配置，请在对应来源处理。\n' >&2
+    return 1
   fi
-  if [[ -n "$current" ]]; then
-    printf '    ⚠️ 已有全局 core.hooksPath=%s，本次不覆盖。\n' "$current" >&2
-    printf '       需要归属检查生效时，把 %s/commit-msg 接进现有钩子链。\n' "$desired" >&2
-    return 0
-  fi
+}
 
-  if ! git config --global core.hooksPath "$desired" 2>/dev/null; then
-    printf '    ⚠️ 写入全局 core.hooksPath 失败，归属检查未生效。\n' >&2
-    printf '       手工执行: git config --global core.hooksPath %s\n' "$desired" >&2
-    return 0
+remove_legacy_override() {
+  local direct status
+  if direct="$(git config --global --no-includes --get-all core.hooksPath)"; then
+    if printf '%s\n' "$direct" | grep -Fxq -- "$HOOKS_DIR"; then
+      git config --global --fixed-value --unset-all core.hooksPath "$HOOKS_DIR"
+      printf '    已移除旧治理目录的全局覆盖。各项目需验证自己的提交归属检查。\n'
+    fi
+  else
+    status=$?
+    [[ "$status" == 1 ]] || return "$status"
   fi
-  printf '    已挂载全局 git 钩子: core.hooksPath=%s\n' "$desired"
+  check_no_legacy_override
 }
 
 # --- 内容生成 -------------------------------------------------------------
@@ -370,11 +549,13 @@ main() {
     --check)
       [[ "$#" -eq 1 ]] || { usage; return 2; }
       [[ -f "$VERSION_FILE" ]] || { printf '错误: 缺少 VERSION 文件（%s）\n' "$VERSION_FILE" >&2; return 1; }
+      preflight
       check_installed
       return
       ;;
     --list-targets)
       [[ "$#" -eq 1 ]] || { usage; return 2; }
+      preflight
       list_targets
       return
       ;;
@@ -393,9 +574,23 @@ main() {
 
   printf '==> agent-governance 个人全局基线分发\n'
 
+  preflight
+  local release_commit
+  release_commit="$(git -C "$REPO_DIR" rev-parse HEAD)"
   bash "$REPO_DIR/scripts/check-version-bump.sh"
   run_local_checks
   check_remote_freshness
+  if [[ "$(git -C "$REPO_DIR" rev-parse HEAD)" != "$release_commit" ]]; then
+    printf '错误: 治理仓提交在验证期间发生变化，请重新运行。\n' >&2
+    return 1
+  fi
+  release_root="$(mktemp -d "${TMPDIR:-/tmp}/agent-governance-release.XXXXXX")"
+  git -C "$REPO_DIR" archive "$release_commit" VERSION global scripts/check-commit-attribution.sh |
+    tar -xf - -C "$release_root"
+  GLOBAL_DIR="$release_root/global"
+  VERSION_FILE="$release_root/VERSION"
+  acquire_lock
+  preflight
 
   local latest
   local installed=""
@@ -405,21 +600,9 @@ main() {
   printf '    最新版本: %s\n' "$latest"
   [[ -n "$installed" ]] && printf '    本机已装: %s\n' "$installed"
 
-  # 受管 copy 目标为软链接时拒绝：写入会顺着链接改坏链接指向的真实文件。
   local entry dest
-  for entry in "${COPY_SOURCES[@]}"; do
-    dest="${entry#*|}"
-    if [[ -L "$dest" ]]; then
-      printf '错误: 受管路径是软链接，拒绝安装（避免写到链接目标）: %s\n' "$dest" >&2
-      printf '      → 先删除该软链接，或改回普通文件后重试。\n' >&2
-      return 1
-    fi
-  done
-
-  # 预生成 WorkBuddy 规则内容，先做长度校验，避免装进去被静默丢弃。
-  local workbuddy_tmp
+  # 提前生成 WorkBuddy 规则，避免发布超过工具的长度限制的内容。
   workbuddy_tmp="$(mktemp "${TMPDIR:-/tmp}/agent-governance-workbuddy.XXXXXX")"
-  trap "rm -f '$workbuddy_tmp'" EXIT
   workbuddy_rule_content >"$workbuddy_tmp"
   local workbuddy_chars
   workbuddy_chars="$(wc -m <"$workbuddy_tmp" | tr -d '[:space:]')"
@@ -428,25 +611,14 @@ main() {
     return 1
   fi
 
-  # --- 计算变更 ---
-  # 钩子文件丢了可执行位时先修好：cp 不保留模式，内容一致但不可执行的钩子会被 git
-  # 静默跳过，等于门禁悄悄失效。
-  local repair
-  for entry in "${COPY_SOURCES[@]}"; do
-    repair="${entry#*|}"
-    if [[ "$repair" == "$HOOKS_DIR/"* && -f "$repair" && ! -x "$repair" ]]; then
-      chmod +x "$repair"
-      printf '    已修复可执行位: %s\n' "$repair"
-    fi
-  done
-
   local -a plan_copy_src=() plan_copy_dest=() plan_link_dest=() plan_link_name=()
   local need_workbuddy=0
 
   for entry in "${COPY_SOURCES[@]}"; do
-    local src="$REPO_DIR/${entry%%|*}"
+    local src="$release_root/${entry%%|*}"
     dest="${entry#*|}"
-    if [[ -f "$dest" ]] && cmp -s "$src" "$dest"; then
+    if [[ -f "$dest" ]] && cmp -s "$src" "$dest" &&
+      [[ "$dest" != "$HOOKS_DIR/"* || -x "$dest" ]]; then
       continue
     fi
     plan_copy_src+=("$src")
@@ -466,49 +638,52 @@ main() {
     need_workbuddy=1
   fi
 
-  if (( ${#plan_copy_dest[@]} == 0 && ${#plan_link_dest[@]} == 0 && need_workbuddy == 0 )) && [[ "$installed" == "$latest" ]]; then
+  remove_legacy_override
+  if (( ${#plan_copy_dest[@]} == 0 && ${#plan_link_dest[@]} == 0 && need_workbuddy == 0 )) && cmp -s "$PREFIX/.gov-version" "$VERSION_FILE"; then
     printf '==> 无需更新（已是 %s）。\n' "$latest"
-    configure_global_hooks
     printf '    settings.json / settings.local.json / 个人 memory / auth 属个人层，未被触碰。\n'
     return 0
   fi
 
-  # --- 快照 + 安装 ---
-  local ts
-  local snapshot_dir
+  local ts snapshot_dir sequence=0
   ts="$(date +%Y%m%d-%H%M%S)"
-  snapshot_dir="$BACKUP_ROOT/$ts"
-  create_snapshot "$snapshot_dir"
-  printf '    已快照当前状态: %s\n' "${snapshot_dir#"$HOME"/}"
+  while :; do
+    snapshot_dir="$(printf '%s/%s-%08d' "$BACKUP_ROOT" "$ts" "$sequence")"
+    [[ ! -e "$snapshot_dir" && ! -L "$snapshot_dir" ]] && break
+    sequence=$((sequence + 1))
+  done
+  pending_snapshot="$(mktemp -d "$BACKUP_ROOT/.pending.XXXXXX")"
+  create_snapshot "$pending_snapshot"
+  mv "$pending_snapshot" "$snapshot_dir"
+  pending_snapshot=
+  printf '    已快照当前状态: %s\n' "${snapshot_dir#"$DEVICE_HOME"/}"
 
-  local index
+  local index executable
   for index in "${!plan_copy_dest[@]}"; do
     dest="${plan_copy_dest[$index]}"
-    mkdir -p "$(dirname "$dest")"
-    cp "${plan_copy_src[$index]}" "$dest"
-    [[ "$dest" == "$HOOKS_DIR/"* ]] && chmod +x "$dest"
+    executable=0
+    [[ "$dest" != "$HOOKS_DIR/"* ]] || executable=1
+    install_copy "${plan_copy_src[$index]}" "$dest" "$executable"
     printf '    已安装: %s\n' "$dest"
   done
 
   for index in "${!plan_link_dest[@]}"; do
     dest="${plan_link_dest[$index]}"
+    validate_target "$dest" 1
     mkdir -p "$(dirname "$dest")"
     ln -sfn "$CANONICAL_AGENTS" "$dest"
     printf '    已链接: %s → %s  (%s)\n' "$dest" "$CANONICAL_AGENTS" "${plan_link_name[$index]}"
   done
 
   if (( need_workbuddy == 1 )); then
-    mkdir -p "$(dirname "$WORKBUDDY_RULE_PATH")"
-    cp "$workbuddy_tmp" "$WORKBUDDY_RULE_PATH"
+    install_copy "$workbuddy_tmp" "$WORKBUDDY_RULE_PATH"
     printf '    已安装: %s  (WorkBuddy 用户级规则，%s 字符)\n' "$WORKBUDDY_RULE_PATH" "$workbuddy_chars"
   fi
 
-  printf '%s\n' "$latest" >"$PREFIX/.gov-version"
-
-  configure_global_hooks
+  install_copy "$VERSION_FILE" "$PREFIX/.gov-version"
 
   if [[ -n "$installed" && "$installed" == "$latest" ]]; then
-    printf '    ⚠️ 受管副本与基线不一致但版本号相同——本机副本被手工改过，已快照。\n'
+    printf '    ⚠️ 受管副本与基线不一致但版本号相同，已快照并修复。\n'
     printf '       （规则改动请回到治理仓修改源文件，本机副本会被覆盖）\n'
   fi
 

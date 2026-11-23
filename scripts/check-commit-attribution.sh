@@ -50,19 +50,11 @@ KNOWN_AI_IDENTITY_REGEX='(^|[^[:alnum:]])(人工智能|llm|large[[:space:]_.-]+l
 UPPERCASE_AI_IDENTITY_REGEX='(^|[^[:alnum:]])AI([^[:alnum:]]|$)'
 
 # --- message 披露短语层 ---------------------------------------------------
-# A：英文「AI + 动作词」。裸 ai 后面必须紧跟动作词才算披露。
-MESSAGE_AI_ACTION_REGEX='(^|[^[:alnum:]])(ai|a[[:space:]_.-]*i)[[:space:]_.-]*(assisted|generated|authored|written|implemented|produced|created|powered|driven|based|agent|assistant|coding|pair|helped)([^[:alnum:]]|$)'
-
-# B：英文「生成动作 + by + 身份」。
-MESSAGE_GENERATED_BY_REGEX='(^|[^[:alnum:]])(generated|written|authored|created|produced|implemented|assisted|powered|driven|built|made)[[:space:]_.-]*by[[:space:]_.-]+(ai|llm|machine|model|assistant|agent|bot|claude|claudecode|codex|chatgpt|gpt|openai|anthropic|copilot|cursor|codeium|gemini|deepseek|qwen|mistral|minimax|aider|windsurf|replit|commandcode)([^[:alnum:]]|$)'
-
-# C：机器生成措辞。
-MESSAGE_MACHINE_REGEX='(^|[^[:alnum:]])(machine|auto|automatically)[[:space:]_.-]*generated([^[:alnum:]]|$)'
-
-# D：中文披露。中文功能名（如「AI 模块」「ai 摘要」）后面不跟动作词，不会被拦。
-MESSAGE_ZH_REGEX='(由|借助|使用|通过|利用)[[:space:]]*(ai|人工智能|大模型|语言模型|llm|claude([[:space:]]*code)?|codex|copilot|chatgpt|gpt|deepseek|assistant|agent|bot)[[:space:]]*(生成|编写|撰写|实现|完成|辅助|协助|输出|提交|处理|修改|重构)|(ai|人工智能|大模型|语言模型|llm|claude|claudecode|codex|copilot|chatgpt|gpt|deepseek|assistant|bot)[[:space:]]*(生成|编写|撰写|实现|完成|辅助|协助)'
-
-MESSAGE_DISCLOSURE_REGEX="$MESSAGE_AI_ACTION_REGEX|$MESSAGE_GENERATED_BY_REGEX|$MESSAGE_MACHINE_REGEX|$MESSAGE_ZH_REGEX"
+# 匹配对本次提交或实现的归属。功能名、普通生成物和领域术语本身可用。
+MESSAGE_AI_ACTION_REGEX='^[[:space:]]*([[:alnum:]_()/.-]+:[[:space:]]*)?(ai|a[[:space:]_.-]*i)([[:space:]_.-]+(agent|assistant))?[[:space:]_.-]+(assisted|generated|authored|written|implemented|produced|created)[[:space:]_.-]+(commit|patch|change|implementation|code|diff)([^[:alnum:]]|$)'
+MESSAGE_GENERATED_BY_REGEX='(^[[:space:]]*([[:alnum:]_()/.-]+:[[:space:]]*)?|(^|[^[:alnum:]])(commit|patch|change|implementation|code|diff)[[:space:]]+((is|was|were)[[:space:]]+)?)(generated|written|authored|created|produced|implemented|assisted|built|made)[[:space:]_.-]+by[[:space:]_.-]+(ai|llm|machine|model|assistant|agent|bot|claude|claudecode|codex|chatgpt|gpt|openai|anthropic|copilot|cursor|codeium|gemini|deepseek|qwen|mistral|minimax|aider|windsurf|replit|commandcode)([^[:alnum:]]|$)'
+MESSAGE_ZH_REGEX='((由|借助|使用|通过|利用)[[:space:]]*)?(ai|人工智能|大模型|语言模型|llm|claude([[:space:]]*code)?|codex|copilot|chatgpt|gpt|deepseek|assistant|agent|bot)[[:space:]]*(生成|编写|撰写|实现|完成|辅助|协助|提交|修改|重构)[[:space:]]*((本次|这次|此次|此)(提交|改动|补丁|实现|代码)|[。！![:space:]]*$)'
+MESSAGE_DISCLOSURE_REGEX="$MESSAGE_AI_ACTION_REGEX|$MESSAGE_GENERATED_BY_REGEX|$MESSAGE_ZH_REGEX"
 
 governance_mode=0
 violations=0
@@ -212,9 +204,8 @@ print_policy() {
   printf '\n[2b] 身份层补充（全大写 AI）:\n%s\n' "$UPPERCASE_AI_IDENTITY_REGEX"
   printf '\n[3] message 披露短语 A（AI + 动作词）:\n%s\n' "$MESSAGE_AI_ACTION_REGEX"
   printf '\n[4] message 披露短语 B（动作 + by + 身份）:\n%s\n' "$MESSAGE_GENERATED_BY_REGEX"
-  printf '\n[5] message 披露短语 C（机器生成）:\n%s\n' "$MESSAGE_MACHINE_REGEX"
-  printf '\n[6] message 披露短语 D（中文披露）:\n%s\n' "$MESSAGE_ZH_REGEX"
-  printf '\n说明: 层 3-6 只匹配披露短语，不匹配裸词 ai / agent / assistant / bot。\n'
+  printf '\n[5] message 披露短语 C（中文披露）:\n%s\n' "$MESSAGE_ZH_REGEX"
+  printf '\n说明: 层 3-5 只匹配披露短语，不匹配裸词 ai / agent / assistant / bot。\n'
   printf '      「修复 AI 模块的空指针」「增加 ai 摘要」属于产品功能描述，不拦截。\n'
 }
 

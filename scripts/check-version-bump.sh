@@ -8,10 +8,13 @@
 # 新规则悄悄地发不下去。本脚本纯本地 git，不依赖 remote。
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+_self="${BASH_SOURCE[0]:-}"
+[[ -f "$_self" ]] || _self="$0"
+REPO_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
 cd "$REPO_DIR"
 
 RULE_PATHS=(
+  AGENTS.md
   global
   tests
   .github
@@ -102,6 +105,13 @@ if previous_version="$(git show "${version_commit}^:VERSION" 2>/dev/null)"; then
     echo "错误: VERSION 必须比上一版本递增（上一版本: $previous_version，当前版本: $current_version）。" >&2
     exit 1
   fi
+fi
+
+# 比较最终树，避免合并历史简化只看到某一侧的规则变更。
+if ! git diff --quiet "$version_commit" HEAD -- "${RULE_PATHS[@]}"; then
+  echo "错误: 当前提交的规则树与 VERSION 提交不一致（改规则后须递增 VERSION）。" >&2
+  git diff --name-only "$version_commit" HEAD -- "${RULE_PATHS[@]}" >&2
+  exit 1
 fi
 
 for rule_path in "${RULE_PATHS[@]}"; do

@@ -96,7 +96,7 @@ git -C "$repo" add file.txt
 expect_commit_blocked global-hook-blocks-co-author-trailer "$repo" \
   $'docs: update workflow\n\nCo-Authored-By: Claude Code <noreply@anthropic.com>'
 
-expect_commit_blocked global-hook-blocks-chinese-disclosure "$repo" 'docs: 由 AI 生成的工作流说明'
+expect_commit_blocked global-hook-blocks-chinese-disclosure "$repo" 'docs: 由 AI 生成本次补丁'
 
 expect_commit_ok global-hook-allows-plain-wording "$repo" 'docs: 修复 AI 模块的空指针'
 
@@ -173,6 +173,53 @@ if [[ "$broken_code" -ne 0 ]]; then
 else
   fail missing-checker-fails-closed
 fi
+
+rewrite_repo="$TEST_ROOT/rewrite-repo"
+make_repo "$rewrite_repo"
+cat >"$rewrite_repo/.git/hooks/commit-msg" <<'HOOK'
+#!/usr/bin/env bash
+printf '\nCo-Authored-By: Fixture <fixture@example.invalid>\n' >>"$1"
+HOOK
+chmod +x "$rewrite_repo/.git/hooks/commit-msg"
+if commit_with "$rewrite_repo" 'docs: project hook mutates the message' >"$TEST_ROOT/rewrite.out" 2>&1; then
+  fail final-message-is-rechecked
+elif grep -q 'co-author trailer' "$TEST_ROOT/rewrite.out"; then
+  pass final-message-is-rechecked
+else
+  fail final-message-is-rechecked
+fi
+
+# 项目钩子可以主动调用全局入口。内层跳过，外层检查最终消息。
+nested_repo="$TEST_ROOT/nested-repo"
+make_repo "$nested_repo"
+cat >"$nested_repo/.git/hooks/commit-msg" <<'HOOK'
+#!/usr/bin/env bash
+set -eu
+"$(git config --get core.hooksPath)/commit-msg" "$1"
+printf 'docs: normalized message\n' >"$1"
+HOOK
+chmod +x "$nested_repo/.git/hooks/commit-msg"
+expect_commit_ok explicit-hook-chain-checks-once "$nested_repo" 'docs: 由 AI 生成本次补丁'
+
+# 迁移到项目钩子后，旧入口只检查消息，不运行已被自定义路径遮蔽的钩子。
+custom_repo="$TEST_ROOT/custom-repo"
+make_repo "$custom_repo"
+mkdir "$custom_repo/custom-hooks"
+git -C "$custom_repo" config core.hooksPath custom-hooks
+printf '#!/usr/bin/env bash\nexit 19\n' >"$custom_repo/.git/hooks/commit-msg"
+chmod +x "$custom_repo/.git/hooks/commit-msg"
+cat >"$custom_repo/custom-hooks/commit-msg" <<'HOOK'
+#!/usr/bin/env bash
+set -eu
+if grep -q 'blocked' "$1"; then
+  printf '\nCo-Authored-By: Fixture <fixture@example.invalid>\n' >>"$1"
+fi
+exec "$GOVERNANCE_FIXTURE_HOOK" "$1"
+HOOK
+chmod +x "$custom_repo/custom-hooks/commit-msg"
+export GOVERNANCE_FIXTURE_HOOK="$install_root/git-hooks/commit-msg"
+expect_commit_blocked custom-hook-checks-rewritten-message "$custom_repo" 'docs: blocked if rewritten'
+expect_commit_ok custom-hook-keeps-inactive-default-hook-inactive "$custom_repo" 'docs: valid custom hook'
 
 if (( failures > 0 )); then
   printf '%d global hook checks failed.\n' "$failures" >&2
