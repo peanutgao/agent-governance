@@ -241,6 +241,19 @@ else
   failures=$((failures + 1))
 fi
 
+# 退役路径清理：曾分发、现已从清单移除的副本必须被删除，且删除前留下备份。
+# 否则它会成为不再更新却仍被工具读取的孤儿规则。
+retired_file="$targets_home/.codex/ai-change-implementation-prompt.md"
+printf 'stale flow from an older release\n' >"$retired_file"
+run_distribution "$targets_repo" "$targets_home"
+if [[ ! -e "$retired_file" ]] &&
+  grep -rqs 'stale flow from an older release' "$targets_home/.codex/.gov-backup/retired-"*; then
+  printf 'PASS retired-path-removed-with-backup\n'
+else
+  printf 'FAIL retired-path-removed-with-backup\n' >&2
+  failures=$((failures + 1))
+fi
+
 # --check 必须回答「本机副本是否还等于源文件」：一致时 0，手工改动后 1。
 HOME="$targets_home" bash "$targets_repo/scripts/distribute.sh" --check >"$TEST_ROOT/check-clean.out" 2>&1
 check_clean_code=$?

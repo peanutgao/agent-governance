@@ -138,6 +138,13 @@ fi
 WORKBUDDY_RULE_MAX_CHARS=40000
 GLOBAL_RULE_MAX_CHARS=40000
 
+# 已退役的受管路径：曾由本仓分发，现已从清单移除。
+# 不做退役清理会留下孤儿副本——它不再被比对、不再被更新，却仍在被工具读取，
+# 等于把过时规则留在本机。分发时删除，删除前同样纳入整组快照。
+RETIRED_PATHS=(
+  "$PREFIX/ai-change-implementation-prompt.md"
+)
+
 MANAGED_PATHS=()
 for entry in "${COPY_SOURCES[@]}"; do
   MANAGED_PATHS+=("${entry#*|}")
@@ -554,6 +561,29 @@ create_snapshot() {
   done
 }
 
+# --- 退役路径清理 ---------------------------------------------------------
+# 删除不再受管的旧分发副本。退役路径刻意不进 MANAGED_PATHS：那会改变快照清单的
+# 项数契约，使既有快照无法回滚。删除前把内容移到独立的 retired 目录，可人工恢复。
+remove_retired_paths() {
+  local retired=()
+  local path
+  for path in "${RETIRED_PATHS[@]}"; do
+    [[ -e "$path" || -L "$path" ]] || continue
+    retired+=("$path")
+  done
+  (( ${#retired[@]} > 0 )) || return 0
+
+  local backup_dir
+  backup_dir="$BACKUP_ROOT/retired-$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$backup_dir" || return 1
+  for path in "${retired[@]}"; do
+    local name
+    name="$(printf '%s' "$path" | tr '/' '_')"
+    mv "$path" "$backup_dir/$name" || return 1
+    printf '    已退役: %s（备份于 %s）\n' "$path" "${backup_dir#"$DEVICE_HOME"/}"
+  done
+}
+
 # --- 主流程 ---------------------------------------------------------------
 main() {
   local mode="${1:-}"
@@ -666,7 +696,14 @@ main() {
   fi
 
   remove_legacy_override
-  if (( ${#plan_copy_dest[@]} == 0 && ${#plan_link_dest[@]} == 0 && need_workbuddy == 0 )) && cmp -s "$PREFIX/.gov-version" "$VERSION_FILE"; then
+
+  # 退役清理要在「无需更新」短路之前：孤儿副本本身就是需要处理的状态。
+  local retired_count=0
+  for entry in "${RETIRED_PATHS[@]}"; do
+    [[ -e "$entry" || -L "$entry" ]] && retired_count=$((retired_count + 1))
+  done
+
+  if (( ${#plan_copy_dest[@]} == 0 && ${#plan_link_dest[@]} == 0 && need_workbuddy == 0 && retired_count == 0 )) && cmp -s "$PREFIX/.gov-version" "$VERSION_FILE"; then
     printf '==> 无需更新（已是 %s）。\n' "$latest"
     printf '    settings.json / settings.local.json / 个人 memory / auth 属个人层，未被触碰。\n'
     return 0
@@ -706,6 +743,8 @@ main() {
     install_copy "$workbuddy_tmp" "$WORKBUDDY_RULE_PATH"
     printf '    已安装: %s  (WorkBuddy 用户级规则，%s 字符)\n' "$WORKBUDDY_RULE_PATH" "$workbuddy_chars"
   fi
+
+  remove_retired_paths
 
   install_copy "$VERSION_FILE" "$PREFIX/.gov-version"
 
