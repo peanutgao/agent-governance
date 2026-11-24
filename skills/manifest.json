@@ -214,6 +214,10 @@
     "superpowers": {
       "type": "local",
       "upstream": "https://github.com/obra/superpowers"
+    },
+    "ai-change-flow": {
+      "type": "local",
+      "upstream": "https://github.com/peanutgao/agent-governance"
     }
   }
 }

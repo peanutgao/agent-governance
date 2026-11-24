@@ -37,10 +37,10 @@ try {
 安装脚本先分发以下全局规则，再把 [清单中的 Skills](skills/manifest.json) 同步到 [各工具的全局 Skills 目录](skills/README.md#分发路径)。首次安装的依赖见 [Skills 使用说明](skills/README.md)。
 
 - `~/.codex/AGENTS.md`：全局通用 AI 开发约束；
-- `~/.codex/ai-change-implementation-prompt.md`：复杂任务按需读取的详细流程；
 - `~/.codex/check-commit-attribution.sh`：commit 归属检查器，可复制进项目仓库；
 - `~/.codex/git-hooks/`：旧全局钩子兼容文件。分发移除旧版直接挂载的治理路径，保留项目和其他来源的 Git 配置；
-- `~/.claude/CLAUDE.md`、`~/.pi/agent/AGENTS.md`、`~/.config/opencode/AGENTS.md`、`~/.dsh/AGENTS.md`、`~/.commandcode/AGENTS.md`、`~/.omp/agent/AGENTS.md`：Unix 上是指向真源的软链，Windows 上是普通文件副本；
+- `~/.claude/CLAUDE.md`、`~/.pi/agent/AGENTS.md`、`~/.config/opencode/AGENTS.md`、`~/.dsh/AGENTS.md`、`~/.commandcode/AGENTS.md`、`~/.omp/agent/AGENTS.md`、`~/.config/zed/AGENTS.md`、`~/.config/amp/AGENTS.md`：Unix 上是指向真源的软链，Windows 上是普通文件副本；
+- `~/.copilot/copilot-instructions.md`：GitHub Copilot CLI 的个人级入口（内容副本，它不读 AGENTS.md）；
 - `~/.workbuddy-ai/rules/agent-governance.md`：WorkBuddy 用户级规则（带 frontmatter，是生成文件不是软链）；
 - `~/.codex/.gov-version`：已安装版本号。
 
@@ -92,5 +92,5 @@ sed -n '1,240p' AGENTS.md
 用首个可运行、可验收的功能确定项目起步约束：
 
 1. 确认首个功能的目标、验收条件和已知限制。查找可以沿用的模板、组件和依赖，写下候选路径和取舍。
-2. 第一次决定模块边界、依赖方向或基础技术选型时，按 [实现前的独立方案复核](global/ai-change-implementation-prompt.md#121-independent-proposal-review) 核对方案。把通过复核的架构边界、复用入口、第一条可执行的验证命令和文档索引记录到项目的 `AGENTS.md`。
+2. 第一次决定模块边界、依赖方向或基础技术选型时，按 `ai-change-flow` Skill 的「独立方案复核」核对方案。把通过复核的架构边界、复用入口、第一条可执行的验证命令和文档索引记录到项目的 `AGENTS.md`。
 3. 为首批已批准的业务行为建立 Spec。在架构文档记录已确定的模块归属与依赖方向，把需要长期保留的决策和理由写入 ADR。文档按项目采用的目录约定维护。

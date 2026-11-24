@@ -24,9 +24,14 @@ REPO_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
 TEMPLATE="$REPO_DIR/templates/project/AI-GOVERNANCE.md"
 VERSION_FILE="$REPO_DIR/VERSION"
 TARGET_ROOT="${PROJECT_GOVERNANCE_ROOT:-$HOME/Documents/work/personal-project/hengqin}"
-REPOS=(hengqin-backend hengqin-desktop hengqin-admin)
+# 目标仓库默认由 --root 目录下「含 .git 且已有快照或有 AGENTS.md」的子目录自动发现。
+# 可用 --repos 或 PROJECT_GOVERNANCE_REPOS（逗号分隔）显式指定，避免把项目清单写进治理仓。
+REPOS=()
+REPOS_EXPLICIT=0
 
-# 与 scripts/check-governance-snapshot.sh 的 PLACEHOLDER 保持一致。
+# 计算哈希时把 header 的 hash 字段还原为这个固定占位符。它是本脚本与
+# templates/project/AI-GOVERNANCE.md 正文（第 9 行）共同约定的常量，改一处必须改另一处；
+# tests/sync-project-governance.sh 会核对渲染结果。
 PLACEHOLDER="416fd18874c6a253af427226a890c03d0b35da8c2d33ceaec46be376de67ef1d"
 
 mode="write"
@@ -34,12 +39,14 @@ mode="write"
 usage() {
   cat >&2 <<'USAGE'
 用法:
-  sync-project-governance.sh                  # 生成/更新三仓快照
+  sync-project-governance.sh                  # 生成/更新目标仓快照
   sync-project-governance.sh --check          # 只校验，不写入
   sync-project-governance.sh --root <path>    # 指定 monorepo 根目录
+  sync-project-governance.sh --repos <a,b>    # 显式指定仓库名（默认自动发现）
 
 环境变量:
   PROJECT_GOVERNANCE_ROOT                     # 等价于 --root
+  PROJECT_GOVERNANCE_REPOS                    # 等价于 --repos
 USAGE
 }
 
@@ -52,6 +59,12 @@ while [[ "$#" -gt 0 ]]; do
     --root)
       [[ "$#" -ge 2 ]] || { usage; exit 2; }
       TARGET_ROOT="$2"
+      shift 2
+      ;;
+    --repos)
+      [[ "$#" -ge 2 ]] || { usage; exit 2; }
+      IFS=',' read -r -a REPOS <<<"$2"
+      REPOS_EXPLICIT=1
       shift 2
       ;;
     -h|--help)
@@ -69,6 +82,44 @@ done
 [[ -f "$VERSION_FILE" ]] || { printf '错误: 缺少 VERSION %s\n' "$VERSION_FILE" >&2; exit 1; }
 [[ -d "$TARGET_ROOT" ]] || { printf '错误: 目标根目录不存在 %s\n' "$TARGET_ROOT" >&2; exit 1; }
 TARGET_ROOT="$(cd -P "$TARGET_ROOT" && pwd)"
+
+# 未显式指定仓库时，从目标根目录下自动发现候选仓库。
+# 判据是「已有快照、或是 Git 仓、或已有项目级 AI 约束入口」——三者覆盖续同步、
+# 首次同步和已接入但还没快照的项目，同时不会把无关目录意外纳管。
+if [[ "$REPOS_EXPLICIT" == 0 ]]; then
+  if [[ -n "${PROJECT_GOVERNANCE_REPOS:-}" ]]; then
+    IFS=',' read -r -a REPOS <<<"$PROJECT_GOVERNANCE_REPOS"
+  else
+    while IFS= read -r candidate; do
+      REPOS+=("$candidate")
+    done < <(
+      find "$TARGET_ROOT" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null |
+        while IFS= read -r dir; do
+          if [[ -e "$dir/.git" || -f "$dir/AI-GOVERNANCE.md" ||
+            -f "$dir/AGENTS.md" || -f "$dir/CLAUDE.md" ]]; then
+            basename "$dir"
+          fi
+        done | LC_ALL=C sort
+    )
+  fi
+fi
+
+# 去掉空项，拒绝带路径分隔符的名字，避免 --repos 变成越界写入入口。
+normalized=()
+for repo in "${REPOS[@]}"; do
+  repo="${repo//[[:space:]]/}"
+  [[ -n "$repo" ]] || continue
+  if [[ "$repo" == */* || "$repo" == "." || "$repo" == ".." ]]; then
+    printf '错误: 仓库名不能包含路径分隔符: %s\n' "$repo" >&2
+    exit 1
+  fi
+  normalized+=("$repo")
+done
+REPOS=("${normalized[@]}")
+if [[ "${#REPOS[@]}" -eq 0 ]]; then
+  printf '错误: 在 %s 下没有发现候选仓库（需含 .git、AI-GOVERNANCE.md、AGENTS.md 或 CLAUDE.md）；用 --repos 显式指定。\n' "$TARGET_ROOT" >&2
+  exit 1
+fi
 
 real_repositories=0
 for repo in "${REPOS[@]}"; do

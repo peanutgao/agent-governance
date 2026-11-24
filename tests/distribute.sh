@@ -15,7 +15,7 @@ make_fixture() {
   local name="$1"
   local repo="$TEST_ROOT/$name/repo"
 
-  mkdir -p "$repo/global/git-hooks" "$repo/.github" "$repo/.githooks" "$repo/scripts" "$repo/tests" "$repo/templates/project"
+  mkdir -p "$repo/global/git-hooks" "$repo/.github" "$repo/.githooks" "$repo/scripts" "$repo/tests" "$repo/templates/project" "$repo/skills/local/ai-change-flow/references"
   git init -q "$repo"
   git -C "$repo" config user.name "Joseph Koh"
   git -C "$repo" config user.email "joseph@example.com"
@@ -25,7 +25,7 @@ make_fixture() {
   git -C "$repo" config core.hooksPath "$TEST_ROOT/empty-hooks"
 
   printf 'global rules v1\n' >"$repo/global/AGENTS.md"
-  printf 'detailed flow v1\n' >"$repo/global/ai-change-implementation-prompt.md"
+  printf 'skill flow v1\n' >"$repo/skills/local/ai-change-flow/references/full-flow.md"
   printf 'global commit-msg hook\n' >"$repo/global/git-hooks/commit-msg"
   printf 'global chain helper\n' >"$repo/global/git-hooks/_chain"
   printf 'global pre-commit hook\n' >"$repo/global/git-hooks/pre-commit"
@@ -38,6 +38,7 @@ make_fixture() {
   printf 'project template\n' >"$repo/templates/project/AI-GOVERNANCE.md"
   printf 'project sync\n' >"$repo/scripts/sync-project-governance.sh"
   cp "$ROOT_DIR/scripts/check-version-bump.sh" "$repo/scripts/check-version-bump.sh"
+  cp "$ROOT_DIR/scripts/check-rule-paths.sh" "$repo/scripts/check-rule-paths.sh"
   cp "$ROOT_DIR/scripts/distribute.sh" "$repo/scripts/distribute.sh"
   printf 'baseline tests\n' >"$repo/tests/placeholder.sh"
   printf '1.0.0\n' >"$repo/VERSION"
@@ -108,12 +109,12 @@ git -C "$rollback_repo" add global/AGENTS.md VERSION
 git -C "$rollback_repo" commit -q -m "chore: release 1.1.0"
 run_distribution "$rollback_repo" "$rollback_home"
 expected_agents="$(<"$rollback_home/.codex/AGENTS.md")"
-expected_prompt="$(<"$rollback_home/.codex/ai-change-implementation-prompt.md")"
+expected_checker="$(<"$rollback_home/.codex/check-commit-attribution.sh")"
 expected_version="$(<"$rollback_home/.codex/.gov-version")"
 
-printf 'detailed flow v2\n' >"$rollback_repo/global/ai-change-implementation-prompt.md"
+printf 'attribution checker v2\n' >"$rollback_repo/scripts/check-commit-attribution.sh"
 printf '1.2.0\n' >"$rollback_repo/VERSION"
-git -C "$rollback_repo" add global/ai-change-implementation-prompt.md VERSION
+git -C "$rollback_repo" add scripts/check-commit-attribution.sh VERSION
 git -C "$rollback_repo" commit -q -m "chore: release 1.2.0"
 run_distribution "$rollback_repo" "$rollback_home"
 HOME="$rollback_home" bash "$rollback_repo/scripts/distribute.sh" --rollback >"$rollback_home/rollback.out" 2>&1
@@ -124,7 +125,7 @@ else
   printf 'FAIL rollback-restores-agents-as-group\n' >&2
   failures=$((failures + 1))
 fi
-if [[ "$(<"$rollback_home/.codex/ai-change-implementation-prompt.md")" == "$expected_prompt" ]]; then
+if [[ "$(<"$rollback_home/.codex/check-commit-attribution.sh")" == "$expected_checker" ]]; then
   printf 'PASS rollback-restores-prompt-as-group\n'
 else
   printf 'FAIL rollback-restores-prompt-as-group\n' >&2
@@ -163,10 +164,17 @@ expect_symlink_to() {
   fi
 }
 
-# 治理仓自身的工作区级入口：根 AGENTS.md 必须是 global/AGENTS.md 的软链。
-# 少了它，在本仓干活时（特别是分发尚未跑过、WorkBuddy 用户级规则还不存在时）
-# AI 读不到这套规则，等于治理仓自己不受治理。
-expect_symlink_to repo-root-agents-symlink "global/AGENTS.md" "$ROOT_DIR/AGENTS.md"
+# 治理仓自身的工作区级入口：根 AGENTS.md 必须是指针，不能是 global/AGENTS.md 的软链。
+# 软链会让同一份规则在一次会话里按不同路径被注入多遍（工具按路径去重，软链绕过它），
+# 而指针文件只保留导航信息。它也不是分发产物，随仓库一起 clone 下来。
+if [[ -f "$ROOT_DIR/AGENTS.md" && ! -L "$ROOT_DIR/AGENTS.md" ]] &&
+  grep -q 'global/AGENTS.md' "$ROOT_DIR/AGENTS.md" &&
+  ! grep -q '^## 变更分级' "$ROOT_DIR/AGENTS.md"; then
+  printf 'PASS repo-root-agents-pointer\n'
+else
+  printf 'FAIL repo-root-agents-pointer（根 AGENTS.md 必须是指针文件，不能是软链或真源副本）\n' >&2
+  failures=$((failures + 1))
+fi
 
 targets_repo="$(make_fixture targets)"
 targets_home="$TEST_ROOT/targets/home"
@@ -174,9 +182,6 @@ run_distribution "$targets_repo" "$targets_home"
 
 canonical="$targets_home/.codex/AGENTS.md"
 expect_same_content canonical-agents "$targets_repo/global/AGENTS.md" "$canonical"
-expect_same_content canonical-prompt \
-  "$targets_repo/global/ai-change-implementation-prompt.md" \
-  "$targets_home/.codex/ai-change-implementation-prompt.md"
 expect_same_content canonical-checker \
   "$targets_repo/scripts/check-commit-attribution.sh" \
   "$targets_home/.codex/check-commit-attribution.sh"

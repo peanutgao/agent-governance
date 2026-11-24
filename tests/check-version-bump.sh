@@ -24,7 +24,8 @@ make_fixture() {
   git -C "$repo" config user.email "joseph@example.com"
 
   printf 'baseline global rules\n' >"$repo/global/AGENTS.md"
-  printf 'baseline detailed flow\n' >"$repo/global/ai-change-implementation-prompt.md"
+  mkdir -p "$repo/skills/local/ai-change-flow/references"
+  printf 'baseline skill flow\n' >"$repo/skills/local/ai-change-flow/references/full-flow.md"
   printf 'baseline owners\n' >"$repo/.github/CODEOWNERS"
   printf 'baseline hook\n' >"$repo/.githooks/commit-msg"
   printf 'baseline readme\n' >"$repo/README.md"
@@ -34,6 +35,7 @@ make_fixture() {
   printf 'baseline project sync\n' >"$repo/scripts/sync-project-governance.sh"
   printf 'baseline distributor\n' >"$repo/scripts/distribute.sh"
   cp "$CHECKER" "$repo/scripts/check-version-bump.sh"
+  cp "$ROOT_DIR/scripts/check-rule-paths.sh" "$repo/scripts/check-rule-paths.sh"
   printf 'baseline tests\n' >"$repo/tests/placeholder.sh"
   printf '%s\n' "$initial_version" >"$repo/VERSION"
 

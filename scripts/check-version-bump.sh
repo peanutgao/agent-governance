@@ -25,6 +25,7 @@ RULE_PATHS=(
   scripts/check-commit-attribution.sh
   scripts/distribute.sh
   scripts/check-version-bump.sh
+  scripts/check-rule-paths.sh
   scripts/sync-project-governance.sh
 )
 

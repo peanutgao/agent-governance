@@ -77,6 +77,9 @@ PI_AGENT_DIR="$DEVICE_HOME/.pi/agent"
 OMP_AGENT_DIR="$DEVICE_HOME/.omp/agent"
 OPENCODE_DIR="$DEVICE_HOME/.config/opencode"
 COMMANDCODE_DIR="$DEVICE_HOME/.commandcode"
+ZED_DIR="$DEVICE_HOME/.config/zed"
+AMP_DIR="$DEVICE_HOME/.config/amp"
+COPILOT_DIR="$DEVICE_HOME/.copilot"
 DSH_DIR="$(resolve_target_dir "${DSH_HOME:-}" "$DEVICE_HOME/.dsh" "DSH_HOME")"
 WORKBUDDY_DIR="$(resolve_target_dir "${WORKBUDDY_CONFIG_DIR:-}" "$DEVICE_HOME/.workbuddy-ai" "WORKBUDDY_CONFIG_DIR")"
 WORKBUDDY_RULE_PATH="$WORKBUDDY_DIR/rules/$WORKBUDDY_RULE_NAME"
@@ -93,13 +96,14 @@ WORK_SHARE_DIR="$DEVICE_HOME/Documents/work"
 # workbuddy：WorkBuddy 的用户级规则文件需要 frontmatter，内容由源文件生成。
 COPY_SOURCES=(
   "global/AGENTS.md|$PREFIX/AGENTS.md"
-  "global/ai-change-implementation-prompt.md|$PREFIX/ai-change-implementation-prompt.md"
   "scripts/check-commit-attribution.sh|$PREFIX/check-commit-attribution.sh"
   "global/git-hooks/commit-msg|$HOOKS_DIR/commit-msg"
   "global/git-hooks/_chain|$HOOKS_DIR/_chain"
   "global/git-hooks/pre-commit|$HOOKS_DIR/pre-commit"
   "global/git-hooks/pre-push|$HOOKS_DIR/pre-push"
   "global/AGENTS.md|$WORK_SHARE_DIR/CLAUDE.md"
+  # Copilot CLI 的个人级指令只认这个文件名，不读 AGENTS.md，因此单独分发一份内容副本。
+  "global/AGENTS.md|$COPILOT_DIR/copilot-instructions.md"
 )
 
 LINK_TARGETS=(
@@ -109,7 +113,14 @@ LINK_TARGETS=(
   "$OPENCODE_DIR/AGENTS.md|opencode"
   "$DSH_DIR/AGENTS.md|DeepSeek Harness"
   "$COMMANDCODE_DIR/AGENTS.md|commandcode"
+  "$ZED_DIR/AGENTS.md|Zed"
+  "$AMP_DIR/AGENTS.md|Amp"
 )
+
+# 需要 AGENTS.md 的厂商级入口。这些工具的用户级约定各不相同：Copilot 只认
+# copilot-instructions.md，WorkBuddy 只认 rules/*.md + frontmatter，其余读 AGENTS.md。
+# 单独列出以便按各自形态生成，不混进 LINK_TARGETS 的统一处理。
+COPILOT_INSTRUCTIONS_PATH="$COPILOT_DIR/copilot-instructions.md"
 
 if [[ "$native_windows" == 1 ]]; then
   for entry in "${LINK_TARGETS[@]}"; do
@@ -118,10 +129,14 @@ if [[ "$native_windows" == 1 ]]; then
   LINK_TARGETS=()
 fi
 
-# WorkBuddy 读取用户级规则的路径与上限，来自其运行时实现：
-#   <configDir>/rules/*.md，frontmatter alwaysApply 为真即全量注入；
-#   单文件正文上限 40000 字符，超限会被静默丢弃。
+# 各工具对用户级规则文件的正文长度上限。超限时这些工具是「静默丢弃」而不是报错，
+# 规则看起来装好了、实际不生效，因此分发前必须自己拦住。
+#   WorkBuddy ：<configDir>/rules/*.md，frontmatter alwaysApply 为真即全量注入，上限 40000 字符。
+#   Windsurf  ：global_rules.md 单文件 12000 字符（docs.devin.ai/windsurf）。
+#   Antigravity：单文件 24000 字节，另有全局 20000 token 总预算。
+# 未在这些工具实现中确认「超限静默丢弃」的入口不做长度断言，只记录观察值。
 WORKBUDDY_RULE_MAX_CHARS=40000
+GLOBAL_RULE_MAX_CHARS=40000
 
 MANAGED_PATHS=()
 for entry in "${COPY_SOURCES[@]}"; do
@@ -319,6 +334,8 @@ list_targets() {
   printf '  workbuddy %s  ←  global/AGENTS.md + frontmatter\n' "$WORKBUDDY_RULE_PATH"
   printf '  state     %s  （版本记录，供门禁与回滚使用）\n' "$PREFIX/.gov-version"
   printf '  git       检测并移除直接配置的旧治理目录覆盖 %s\n' "$HOOKS_DIR"
+  printf '\n长度门禁: AGENTS.md ≤ %s 字符；WorkBuddy 规则 ≤ %s 字符（超限会被工具静默丢弃）\n' \
+    "$GLOBAL_RULE_MAX_CHARS" "$WORKBUDDY_RULE_MAX_CHARS"
 }
 
 # --- 回滚 -----------------------------------------------------------------
@@ -406,6 +423,7 @@ run_local_checks() {
     tests/check-hook.sh
     tests/check-global-hook.sh
     tests/check-version-bump.sh
+    tests/check-rule-paths.sh
   )
 
   for suite in "${suites[@]}"; do
@@ -601,6 +619,15 @@ main() {
   [[ -n "$installed" ]] && printf '    本机已装: %s\n' "$installed"
 
   local entry dest
+  # 长度门禁：规则正文超过工具上限时，工具通常「静默丢弃」而不是报错——规则看起来装好了、
+  # 实际不生效。分发前必须先拦住，不能把失效的安装当成成功。
+  local agents_chars
+  agents_chars="$(wc -m <"$GLOBAL_DIR/AGENTS.md" | tr -d '[:space:]')"
+  if (( agents_chars > GLOBAL_RULE_MAX_CHARS )); then
+    printf '错误: AGENTS.md 正文 %s 字符，超过通用上限 %s，部分工具会静默丢弃。\n' "$agents_chars" "$GLOBAL_RULE_MAX_CHARS" >&2
+    return 1
+  fi
+
   # 提前生成 WorkBuddy 规则，避免发布超过工具的长度限制的内容。
   workbuddy_tmp="$(mktemp "${TMPDIR:-/tmp}/agent-governance-workbuddy.XXXXXX")"
   workbuddy_rule_content >"$workbuddy_tmp"

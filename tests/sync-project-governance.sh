@@ -19,7 +19,7 @@ for repo in "${repos[@]}"; do
   mkdir -p "$TEST_ROOT/$repo"
 done
 
-if ! bash "$SCRIPT" --root "$TEST_ROOT" >"$TEST_ROOT/generate.out" 2>&1; then
+if ! bash "$SCRIPT" --root "$TEST_ROOT" --repos "$(IFS=,; echo "${repos[*]}")" >"$TEST_ROOT/generate.out" 2>&1; then
   printf 'FAIL generate\n' >&2
   cat "$TEST_ROOT/generate.out" >&2
   failures=$((failures + 1))
@@ -52,7 +52,7 @@ for repo in "${repos[@]}"; do
   fi
 done
 
-if bash "$SCRIPT" --check --root "$TEST_ROOT" >"$TEST_ROOT/check-ok.out" 2>&1; then
+if bash "$SCRIPT" --check --root "$TEST_ROOT" --repos "$(IFS=,; echo "${repos[*]}")" >"$TEST_ROOT/check-ok.out" 2>&1; then
   printf 'PASS check clean\n'
 else
   printf 'FAIL check clean\n' >&2
@@ -76,6 +76,52 @@ if bash "$SCRIPT" --root "$TEST_ROOT" >"$TEST_ROOT/refuses-local-changes.out" 2>
   failures=$((failures + 1))
 else
   printf 'PASS refuses uncommitted project snapshot\n'
+fi
+
+# 自动发现：不传 --repos 时，从目标根目录下挑出含 .git / 快照 / 项目入口的子目录。
+# 用独立夹具仓，避免依赖被测算仓自身工作树是否干净。
+discover_repo="$TEST_ROOT/discover-repo"
+mkdir -p "$discover_repo/global" "$discover_repo/scripts" "$discover_repo/templates/project"
+cp "$SCRIPT" "$discover_repo/scripts/sync-project-governance.sh"
+cp "$ROOT_DIR/scripts/check-version-bump.sh" "$discover_repo/scripts/check-version-bump.sh"
+cp "$ROOT_DIR/scripts/check-rule-paths.sh" "$discover_repo/scripts/check-rule-paths.sh"
+cp "$ROOT_DIR/templates/project/AI-GOVERNANCE.md" "$discover_repo/templates/project/AI-GOVERNANCE.md"
+cp "$ROOT_DIR/VERSION" "$discover_repo/VERSION"
+printf 'entry\n' >"$discover_repo/AGENTS.md"
+git -C "$discover_repo" init -q
+git -C "$discover_repo" config user.name "Joseph Koh"
+git -C "$discover_repo" config user.email "joseph@example.com"
+git -C "$discover_repo" add .
+git -C "$discover_repo" commit -q -m "chore: fixture"
+
+discover_root="$TEST_ROOT/discover"
+mkdir -p "$discover_root/included-agents" "$discover_root/included-snapshot" "$discover_root/not-a-repo"
+printf '# entry\n' >"$discover_root/included-agents/AGENTS.md"
+printf '# snapshot\n' >"$discover_root/included-snapshot/AI-GOVERNANCE.md"
+printf 'unrelated\n' >"$discover_root/not-a-repo/notes.txt"
+
+if bash "$discover_repo/scripts/sync-project-governance.sh" --root "$discover_root" >"$TEST_ROOT/discover.out" 2>&1; then
+  if [[ -f "$discover_root/included-agents/AI-GOVERNANCE.md" &&
+    -f "$discover_root/included-snapshot/AI-GOVERNANCE.md" &&
+    ! -e "$discover_root/not-a-repo/AI-GOVERNANCE.md" ]]; then
+    printf 'PASS auto-discovery\n'
+  else
+    printf 'FAIL auto-discovery selection\n' >&2
+    failures=$((failures + 1))
+  fi
+else
+  printf 'FAIL auto-discovery\n' >&2
+  cat "$TEST_ROOT/discover.out" >&2
+  failures=$((failures + 1))
+fi
+
+# 目录下完全没有候选仓库时必须失败退出，而不是静默生成零个快照。
+mkdir -p "$TEST_ROOT/empty-root"
+if bash "$SCRIPT" --root "$TEST_ROOT/empty-root" >"$TEST_ROOT/empty.out" 2>&1; then
+  printf 'FAIL empty-root-fails\n' >&2
+  failures=$((failures + 1))
+else
+  printf 'PASS empty-root-fails\n'
 fi
 
 if (( failures > 0 )); then

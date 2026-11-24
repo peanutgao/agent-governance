@@ -10,7 +10,6 @@
 AGENTS.md                              # 软链 → global/AGENTS.md（本仓自身的工作区级入口）
 global/
 ├── AGENTS.md                          # 个人全局通用约束（唯一正文）
-├── ai-change-implementation-prompt.md # 复杂任务按需读取的详细流程
 └── git-hooks/                         # 全局 git 钩子（commit-msg 归属门禁 + 转发层）
 onboarding.md                          # 多设备初始化和更新
 templates/project/AI-GOVERNANCE.md      # 项目仓库携带的公共治理快照模板
@@ -18,6 +17,7 @@ scripts/install.sh                     # 安装全局规则和清单中的 Skill
 scripts/distribute.sh                  # 分发全局入口（--check / --rollback / --list-targets）
 scripts/sync-project-governance.sh     # 从模板生成三仓 AI-GOVERNANCE.md（--check）
 scripts/check-commit-attribution.sh    # commit 归属检查（--governance / --print-policy）
+scripts/check-rule-paths.sh            # 规则内绝对路径可达性检查（防 context rot）
 scripts/check-version-bump.sh          # 规则改动检查
 tests/run-all.sh                       # 全部测试的唯一入口
 VERSION                                # 基线版本号
@@ -32,7 +32,6 @@ VERSION                                # 基线版本号
 | 工具 | 本机路径 | 方式 |
 |---|---|---|
 | Codex | `~/.codex/AGENTS.md` | 内容副本（真源） |
-| Codex | `~/.codex/ai-change-implementation-prompt.md` | 内容副本 |
 | Codex | `~/.codex/check-commit-attribution.sh` | 内容副本，可复制进项目仓库 |
 | 所有工具 | `~/.codex/git-hooks/`（旧版 `commit-msg` 及兼容转发文件） | 内容副本 + 可执行位 |
 | Claude Code | `~/.claude/CLAUDE.md` | 软链 |
@@ -41,6 +40,9 @@ VERSION                                # 基线版本号
 | DeepSeek Harness | `$DSH_HOME/AGENTS.md`（默认 `~/.dsh/AGENTS.md`） | 软链 |
 | commandcode | `~/.commandcode/AGENTS.md` | 软链 |
 | omp | `~/.omp/agent/AGENTS.md` | 软链 |
+| Zed | `~/.config/zed/AGENTS.md` | 软链 |
+| Amp | `~/.config/amp/AGENTS.md` | 软链 |
+| GitHub Copilot CLI | `~/.copilot/copilot-instructions.md` | 内容副本（只认这个文件名） |
 | WorkBuddy | `~/.workbuddy-ai/rules/agent-governance.md` | 生成文件（带 frontmatter） |
 | OrbStack VM 共享入口 | `~/Documents/work/CLAUDE.md` | 内容副本（非软链：VM 内 Claude Code 等经挂载共享的 work 目录读取祖先 `CLAUDE.md`，挂载拓扑无关） |
 
@@ -49,7 +51,7 @@ WorkBuddy 需要单独处理：它的用户级规则是 `<configDir>/rules/*.md`
 `DSH_HOME` 与 `WORKBUDDY_CONFIG_DIR` 只在指向 `$HOME` 之下时才被采用，避免误写到真实用户目录；确需安装到外部目录时设 `AGENT_GOVERNANCE_ALLOW_EXTERNAL_TARGETS=1`。
 
 > 本仓分发个人全局规则和全局 Skills。项目设置、项目 hook、权限、token 和个人 memory 由各项目或本机工具维护。
-> `~/.claude/settings.json`、`settings.local.json`、`~/.workbuddy-ai/{SOUL,IDENTITY,USER,MEMORY}.md` 和其他本机配置由个人自行维护，分发脚本不碰。
+> `~/.claude/settings.json`、`settings.local.json`、`~/.workbuddy-ai/` 下的 SOUL、IDENTITY、USER、MEMORY 个人文件 和其他本机配置由个人自行维护，分发脚本不碰。
 
 ## Git 归属的执行点
 
@@ -86,7 +88,7 @@ bash scripts/distribute.sh --list-targets   # 只看目标清单，不安装
 安装规则：
 
 - 安装、回滚和校验均预检目标类型、父目录及重复或嵌套路径。受管普通文件拒绝软链，约定为软链的工具入口可以保留链接。若显式允许外部目标，仍须使用无跳转且父目录为普通目录的绝对路径。
-- 安装前对全部受管路径 + `.gov-version` 做一次**整组快照**，存于 `~/.codex/.gov-backup/<时间戳>/`。
+- 安装前对全部受管路径 + `.gov-version` 做一次**整组快照**，存于 `~/.codex/.gov-backup/` 下的时间戳目录。
 - 内容一致时跳过，不产生冗余快照；不一致时先快照当前状态再覆盖。
 - 软链目标若原是普通文件，同样随整组快照保存后再替换为软链。
 
@@ -99,6 +101,22 @@ bash scripts/distribute.sh --rollback
 ## 全局 Skills
 
 统一安装先分发规则，再同步 [Skills 清单](skills/manifest.json)。安装条件、同步目标、冲突接管和回退见 [全局 Skills 使用说明](skills/README.md)。如果规则已分发而 Skills 同步失败，解决同步错误后可单独重跑 `python3 scripts/skills.py sync`。
+
+### 详细流程作为 Skill，不再单独分发文件
+
+L2 变更、非显然 Bug、需求变更门禁和独立方案复核的完整流程是 `ai-change-flow` Skill，正文在其 `references/full-flow.md`。它随 Skills 清单同步到各工具的 skills 目录，按渐进加载生效：只有任务命中触发条件时才读入，不占用每个会话的常驻上下文。
+
+过去的做法是把 1449 行的流程文件分发到 `~/.codex/`，再在 `AGENTS.md` 里写一句「按需读取」。那依赖模型自觉，既不是机制，也让规则体积失控。改成 Skill 后：
+
+| 情形 | 加载 |
+|---|---|
+| L2 变更、根因不明的 Bug、需求变更 | `ai-change-flow` Skill |
+| 不清楚应该实现什么 | `grilling` Skill |
+| L0 / 普通 L1 | 只读 `global/AGENTS.md` |
+
+### 规则长度门禁
+
+工具对用户级规则文件普遍有正文上限，且超限时**静默丢弃**而不是报错——规则看起来装好了、实际不生效。分发前会拦住超限内容（见 `scripts/distribute.sh --list-targets` 末尾输出的当前上限）。`scripts/check-rule-paths.sh` 另行校验规则里引用的绝对路径仍然存在，避免硬编码路径随目录调整静默失效。
 
 ## 项目级 AI 约束
 

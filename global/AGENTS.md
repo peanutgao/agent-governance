@@ -40,9 +40,9 @@
 ### 新项目与大重构的前期规划
 
 - 从零建立新项目、或跨模块重构/实质改写架构时，在理解现状并完成需求澄清后，进入实现前必须落实 Spec 与 todo。普通 L1/L2 与简单 Bug 沿用现有流程，不强制套用本规则。
-- 需求澄清优先用 `grilling`，交互格式与事实核验按 `~/.codex/ai-change-implementation-prompt.md`「3.1」执行，不在本条复述。需求经用户确认后才写入 `specs/<Module>/` 并同步索引；未确认内容不进入 Spec。
+- 需求澄清优先用 `grilling`；交互格式与事实核验见 `ai-change-flow` Skill。需求经用户确认后才写入 `specs/<Module>/` 并同步索引；未确认内容不进入 Spec。
 - 设计与任务拆解优先用 `superpowers` 的 brainstorming → design → planning 流程，产出可执行、可验收的 todo，落到项目已有计划文件；没有计划文件时在项目既有文档结构下新建。
-- Skill 是流程工具，不作为固定前置步骤；当前环境没有对应 Skill 时执行等价的最小流程，不伪造 Skill 调用。详细流程见「4. NEW REQUIREMENT FLOW」Phase C；本规则不替代「实现前的独立方案复核」。
+- Skill 是流程工具，不作为固定前置步骤；当前环境没有对应 Skill 时执行等价的最小流程，不伪造 Skill 调用。本规则不替代「实现前的独立方案复核」。
 
 ## 动手前的三行
 
@@ -73,7 +73,6 @@
 
 ```text
 ~/.codex/AGENTS.md                          # Codex，本机真源副本
-~/.codex/ai-change-implementation-prompt.md # 复杂任务的详细流程
 ~/.codex/check-commit-attribution.sh        # 归属检查器，可复制进项目仓库使用
 ~/.claude/CLAUDE.md                         # Claude Code（软链到真源）
 ~/.pi/agent/AGENTS.md                       # pi（软链）
@@ -81,9 +80,15 @@
 ~/.dsh/AGENTS.md                            # DeepSeek Harness（软链）
 ~/.commandcode/AGENTS.md                    # commandcode（软链）
 ~/.omp/agent/AGENTS.md                      # omp（软链）
+~/.config/zed/AGENTS.md                     # Zed（软链）
+~/.config/amp/AGENTS.md                     # Amp（软链）
+~/.copilot/copilot-instructions.md          # GitHub Copilot 用户级（内容副本）
 ~/.workbuddy-ai/rules/agent-governance.md   # WorkBuddy 用户级规则（带 frontmatter，非软链）
 ~/Documents/work/CLAUDE.md                  # OrbStack 虚拟机共享 work 目录入口（普通文件副本，供 VM 内 Claude Code 等经挂载读取）
 ```
+
+详细流程不再作为独立文件分发，改为 `ai-change-flow` Skill 随 Skills 清单同步到各工具的
+skills 目录；正文存在该 Skill 的 `references/full-flow.md`，按需 grep 定位，不整篇读入。
 
 WorkBuddy 另有工作区级入口：项目根目录的 `AGENTS.md`、`CODEBUDDY.md` 或 `.codebuddy/CODEBUDDY.md`，以及 `.codebuddy/rules/*.md`；这些属于项目自己的文件，本仓不写。
 
@@ -113,14 +118,14 @@ WorkBuddy 另有工作区级入口：项目根目录的 `AGENTS.md`、`CODEBUDDY
 - 决策条目只记录“曾待确认、现已定”且影响业务行为的事；用户直接下达的指令不建条目。L0 改动一律不建。
 - Skill 是按需使用的流程工具，不是每个任务的固定前置步骤。当前环境没有对应 Skill 时，执行等价的最小流程，不伪造调用，也不阻塞简单任务。
 
-上述歧义门禁、逐问格式、事实核验和 Skill fallback 的唯一详细正文见 `~/.codex/ai-change-implementation-prompt.md`「3.1 UNCERTAINTY GATE AND SKILL ROUTING」；这不等于所有任务都进入完整流程。
+上述歧义门禁、逐问格式、事实核验和 Skill fallback 的唯一详细正文见 `ai-change-flow` Skill 的「歧义门禁」一节；这不等于所有任务都进入完整流程。
 
 ### 实现前的独立方案复核
 
 - 新项目的基础架构、实质性的模块边界或公共契约变更、影响安全、权限、关键状态、持久化数据或兼容性的方案，以及拟替代或绕开可用现成组件的自研方案，编码前须由独立 reviewer 复核。项目另有前置复核要求时一并执行。
 - 复核按「方案产出 → 独立 reviewer 对抗性评估 → 主 agent 复核 → 修订方案」循环推进，直到双方对方案达成一致。优先自动开启未参与提出或实施该方案的子 Agent 担任独立 reviewer；无子 Agent 能力时用独立会话或人员复核，独立性与对抗性要求不变；都没有则记 `Reviewer: pending`，继续可独立进行的查证，受门禁的实现保持待审。
 - 独立 reviewer 须主动尝试推翻方案：核对需求、现有实现、最简可行方案，检查至少一个具体反例或失败场景，给出「通过」或「需修订」的依据。主 agent 复核 reviewer 结论，不默认接受；存在分歧时回到方案修订。循环上限 3 轮；仍未收敛即停止，列出分歧点交由用户决策，方案保持待批、不进入实现。已通过方案发生实质变化时，只重新复核受影响的决定。
-- 触发条件、取证、结论记录与降级细则见 `~/.codex/ai-change-implementation-prompt.md`「12.1 INDEPENDENT PROPOSAL REVIEW」。
+- 触发条件、取证、结论记录与降级细则见 `ai-change-flow` Skill 的「独立方案复核」一节。
 
 ### Bug 快速路径
 
@@ -212,10 +217,12 @@ WorkBuddy 另有工作区级入口：项目根目录的 `AGENTS.md`、`CODEBUDDY
 
 ## 详细流程
 
-复杂需求、跨模块变更或非显然 Bug 需要更完整的流程时，按需读取：
+L2 契约/架构变更、非显然 Bug、需求变更门禁和独立方案复核的完整步骤如下。它们**不在本文件里复述**，而是由 `ai-change-flow` Skill 触发加载：
 
-```text
-~/.codex/ai-change-implementation-prompt.md
-```
+| 情形 | 加载 |
+|---|---|
+| 任务判为 L2，或根因不明的 Bug，或需求变更 | `ai-change-flow` Skill |
+| 方案命中独立方案复核门禁 | `ai-change-flow` Skill 的「独立方案复核」 |
+| 不清楚应该实现什么 | `grilling` Skill |
 
-该文件是通用流程说明，不替代当前项目的 Spec、Contract 和项目 AI 约束。
+本文件只保留每次任务都要遵守的判定与边界；流程细节按需触发，不默认注入。若当前环境没有 `ai-change-flow` Skill，执行等价的最小流程并在结论里说明，不要伪造 Skill 调用。
