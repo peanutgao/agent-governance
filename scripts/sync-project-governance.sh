@@ -239,10 +239,12 @@ for repo in "${REPOS[@]}"; do
       printf '✓ %s\n' "$dest"
     fi
   elif ! cmp -s "$tmp_dir/final.md" "$dest"; then
+    # 写前再校验一次：仍然只允许覆盖「自洽的脚本产物」。前置循环已经放行过一次，
+    # 这里防的是两个循环之间被人改动，而不是重复拒绝自己的产物。
     if [[ "$real_repositories" == 1 ]] && git -C "$TARGET_ROOT/$repo" rev-parse --git-dir >/dev/null 2>&1; then
       project_status="$(git -C "$TARGET_ROOT/$repo" status --porcelain --untracked-files=all -- AI-GOVERNANCE.md)"
-      if [[ -n "$project_status" ]]; then
-        printf '错误: 快照在同步期间被修改: %s\n' "$dest" >&2
+      if [[ -n "$project_status" ]] && ! snapshot_is_generated "$dest"; then
+        printf '错误: 快照在同步期间被人工修改: %s\n' "$dest" >&2
         exit 1
       fi
     fi
