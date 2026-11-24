@@ -53,6 +53,18 @@ WorkBuddy 需要单独处理：它的用户级规则是 `<configDir>/rules/*.md`
 > 本仓分发个人全局规则和全局 Skills。项目设置、项目 hook、权限、token 和个人 memory 由各项目或本机工具维护。
 > `~/.claude/settings.json`、`settings.local.json`、`~/.workbuddy-ai/` 下的 SOUL、IDENTITY、USER、MEMORY 个人文件 和其他本机配置由个人自行维护，分发脚本不碰。
 
+### 能力边界：这是上下文约束，不是强制门禁
+
+本仓分发的全部是 Markdown 规则和 git 钩子。Markdown 进入模型上下文后**不构成无条件阻断**——Claude Code 官方明确说 CLAUDE.md 是上下文而非强制配置，要阻断某个动作得用 `PreToolUse` hook 或 `permissions.deny`。
+
+本仓不接管 `settings.json`，理由是可验证的：
+
+- 回滚按受管路径做**整文件**快照恢复，部分受管会覆盖你分发后手改的内容；
+- JSON 里追加带标记的 `permissions` 块会产生重复键，解析器静默保留后者，你原有的 `permissions` 规则会被无声丢弃；
+- 本机 `settings.json` 的 `env` 含凭据键，纳入快照意味着把凭据复制进备份目录。
+
+需要硬门禁时请自行在工具配置里接入（Claude Code 的 `PreToolUse` hook、Codex 的 `approval_policy` + `sandbox_mode`、Copilot 的 content exclusion）。本仓提供的是流程与边界约定，不是沙箱。
+
 ## Git 归属的执行点
 
 项目在自身 `commit-msg` 的最后一步接入归属检查器，由 CI 对新增提交再次校验。这样 Git 继续按原有配置选择项目钩子，项目可以在检查前完成提交消息的改写。
