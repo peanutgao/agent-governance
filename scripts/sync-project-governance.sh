@@ -122,6 +122,24 @@ if [[ "${#REPOS[@]}" -eq 0 ]]; then
 fi
 
 real_repositories=0
+
+# 判断一个已存在的快照是不是「本脚本上次生成、但还没被提交」的产物。
+# 判据是它自我声明的 baseline-content-sha256 与自身内容一致（把 hash 字段还原为
+# 固定占位符后重算）。自洽说明它就是脚本写的，没有夹带人工改动，可以安全覆盖；
+# 不自洽说明被人改过，必须停下来让人处理。
+snapshot_is_generated() {
+  local file="$1"
+  local stated actual
+  [[ -f "$file" ]] || return 1
+  stated="$(awk '/^> baseline-content-sha256: /{print $3; exit}' "$file")"
+  [[ -n "$stated" ]] || return 1
+  actual="$(
+    sed "s/^> baseline-content-sha256: .*/> baseline-content-sha256: $PLACEHOLDER/" "$file" |
+      shasum -a 256 | cut -d' ' -f1
+  )"
+  [[ "$stated" == "$actual" ]]
+}
+
 for repo in "${REPOS[@]}"; do
   repo_path="$TARGET_ROOT/$repo"
   dest="$repo_path/AI-GOVERNANCE.md"
@@ -134,9 +152,16 @@ for repo in "${REPOS[@]}"; do
       git -C "$repo_path" rev-parse --git-dir >/dev/null 2>&1; }; then
     real_repositories=1
     project_status="$(git -C "$repo_path" status --porcelain --untracked-files=all -- AI-GOVERNANCE.md)"
-    if [[ -n "$project_status" ]] ||
-      { [[ -f "$dest" ]] && ! git -C "$repo_path" ls-files --error-unmatch -- AI-GOVERNANCE.md >/dev/null 2>&1; }; then
-      printf '错误: 快照有未提交或未跟踪内容，拒绝覆盖: %s\n' "$dest" >&2
+    if [[ -n "$project_status" ]]; then
+      # 未提交的快照若是自洽的脚本产物（上次同步写了但没提交），可以覆盖；
+      # 否则是人工改动，拒绝覆盖。
+      if ! snapshot_is_generated "$dest"; then
+        printf '错误: 快照有未提交的人工改动，拒绝覆盖: %s\n' "$dest" >&2
+        printf '      若确认要丢弃本地改动，先 git checkout -- %s\n' "$dest" >&2
+        exit 1
+      fi
+    elif [[ -f "$dest" ]] && ! git -C "$repo_path" ls-files --error-unmatch -- AI-GOVERNANCE.md >/dev/null 2>&1; then
+      printf '错误: 快照未被 Git 跟踪，拒绝覆盖: %s\n' "$dest" >&2
       exit 1
     fi
   fi

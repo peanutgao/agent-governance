@@ -70,7 +70,7 @@ fi
 
 git -C "$TEST_ROOT/hengqin-desktop" init -q
 if bash "$SCRIPT" --root "$TEST_ROOT" >"$TEST_ROOT/refuses-local-changes.out" 2>&1 ||
-  ! grep -q '未提交或未跟踪内容' "$TEST_ROOT/refuses-local-changes.out" ||
+  ! grep -q '未提交的人工改动' "$TEST_ROOT/refuses-local-changes.out" ||
   ! grep -q '^drift$' "$TEST_ROOT/hengqin-desktop/AI-GOVERNANCE.md"; then
   printf 'FAIL refuses uncommitted project snapshot\n' >&2
   failures=$((failures + 1))
@@ -112,6 +112,51 @@ if bash "$discover_repo/scripts/sync-project-governance.sh" --root "$discover_ro
 else
   printf 'FAIL auto-discovery\n' >&2
   cat "$TEST_ROOT/discover.out" >&2
+  failures=$((failures + 1))
+fi
+
+# 未提交但自洽的脚本产物必须可以覆盖：否则「上次同步写了但没提交」会把
+# 后续同步永久挡住。这里模拟该状态：生成后不提交，再同步一次。
+resync_repo="$TEST_ROOT/resync-repo"
+mkdir -p "$resync_repo/global" "$resync_repo/scripts" "$resync_repo/templates/project" \
+  "$resync_repo/tests" "$resync_repo/.github" "$resync_repo/.githooks"
+printf 'global rules\n' >"$resync_repo/global/AGENTS.md"
+printf 'tests\n' >"$resync_repo/tests/placeholder.sh"
+printf 'owners\n' >"$resync_repo/.github/CODEOWNERS"
+printf 'hook\n' >"$resync_repo/.githooks/commit-msg"
+printf 'readme\n' >"$resync_repo/README.md"
+printf 'onboarding\n' >"$resync_repo/onboarding.md"
+printf 'checker\n' >"$resync_repo/scripts/check-commit-attribution.sh"
+printf 'distributor\n' >"$resync_repo/scripts/distribute.sh"
+cp "$SCRIPT" "$resync_repo/scripts/sync-project-governance.sh"
+cp "$ROOT_DIR/scripts/check-version-bump.sh" "$resync_repo/scripts/check-version-bump.sh"
+cp "$ROOT_DIR/scripts/check-rule-paths.sh" "$resync_repo/scripts/check-rule-paths.sh"
+cp "$ROOT_DIR/templates/project/AI-GOVERNANCE.md" "$resync_repo/templates/project/AI-GOVERNANCE.md"
+cp "$ROOT_DIR/VERSION" "$resync_repo/VERSION"
+printf 'entry\n' >"$resync_repo/AGENTS.md"
+git -C "$resync_repo" init -q
+git -C "$resync_repo" config user.name "Joseph Koh"
+git -C "$resync_repo" config user.email "joseph@example.com"
+git -C "$resync_repo" add .
+git -C "$resync_repo" commit -q -m "chore: fixture"
+# 夹具补一个 origin/main 引用，满足「治理提交已进入默认分支」的前置检查。
+git -C "$resync_repo" update-ref refs/remotes/origin/main HEAD
+git -C "$resync_repo" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+
+mkdir -p "$resync_repo/target/proj-a"
+git -C "$resync_repo/target/proj-a" init -q
+printf 'v1\n' >"$resync_repo/target/proj-a/AI-GOVERNANCE.md"
+git -C "$resync_repo/target/proj-a" add .
+git -C "$resync_repo/target/proj-a" commit -q -m "chore: seed"
+
+bash "$resync_repo/scripts/sync-project-governance.sh" --root "$resync_repo/target" --repos proj-a >/dev/null 2>&1 || true
+first_hash="$(awk '/^> baseline-content-sha256: /{print $3}' "$resync_repo/target/proj-a/AI-GOVERNANCE.md")"
+# 此时工作树有未提交的快照，且它是脚本产物。
+if bash "$resync_repo/scripts/sync-project-governance.sh" --root "$resync_repo/target" --repos proj-a >"$TEST_ROOT/resync.out" 2>&1; then
+  printf 'PASS uncommitted-generated-snapshot-overwritable\n'
+else
+  printf 'FAIL uncommitted-generated-snapshot-overwritable\n' >&2
+  cat "$TEST_ROOT/resync.out" >&2
   failures=$((failures + 1))
 fi
 
