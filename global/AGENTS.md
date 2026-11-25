@@ -39,9 +39,9 @@
 
 ### 新项目与大重构的前期规划
 
-- 从零建立新项目、或跨模块重构/实质改写架构时，在理解现状并完成需求澄清后，进入实现前必须落实 Spec 与 todo。普通 L1/L2 与简单 Bug 沿用现有流程，不强制套用本规则。
-- 需求澄清优先用 `grilling`；交互格式与事实核验见 `ai-change-flow` Skill。需求经用户确认后才写入 `specs/<Module>/` 并同步索引；未确认内容不进入 Spec。
-- 设计与任务拆解优先用 `superpowers` 的 brainstorming → design → planning 流程，产出可执行、可验收的 todo，落到项目已有计划文件；没有计划文件时在项目既有文档结构下新建。
+- 从零建立新项目时优先走 `new-project-bootstrap` Skill（6 阶段门禁：澄清含 Non-Goals → 标准目录与项目治理护栏 → 选型/ADR/Spec/Todo 与独立复核 → 最小基建封装先行 → Walking Skeleton 贯通 → 放行业务）；跨模块重构/实质改写架构在需求澄清后亦须先落实 Spec 与 Todo。普通 L1/L2 与简单 Bug 不强制套用。
+- 需求澄清优先用 `grilling`；交互格式与事实核验见 `ai-change-flow` Skill。需求经用户确认后才写入 `docs/specs/<Module>/`（既有仓沿用 `specs/<Module>/`）并同步索引；未确认内容不进入 Spec。
+- 设计与任务拆解优先用 `superpowers` 的 brainstorming → design → planning 流程，产出可执行、可验收的 todo，落到 `docs/todos/`（既有仓沿用 `plans/` 或既有计划目录）。
 - Skill 是流程工具，不作为固定前置步骤；当前环境没有对应 Skill 时执行等价的最小流程，不伪造 Skill 调用。本规则不替代「实现前的独立方案复核」。
 
 ## 动手前的三行
@@ -69,7 +69,7 @@
 
 ## 分发落地
 
-本基线由 `agent-governance` 分发到本机各工具的全局入口。内容同源，改动必须回治理仓，不要编辑本机副本。已装版本见 `~/.codex/.gov-version`，与本文件是否一致用 `bash ~/Documents/work/agent-governance/scripts/distribute.sh --check` 校验：
+本基线由 `agent-governance` 分发到本机各工具的全局入口。内容同源，改动必须回治理仓，不要编辑本机副本。已装版本见 `~/.codex/.gov-version`，与本文件是否一致在治理仓根目录运行 `bash scripts/distribute.sh --check` 校验：
 
 ```text
 ~/.codex/AGENTS.md                          # Codex，本机真源副本
@@ -166,13 +166,12 @@ WorkBuddy 另有工作区级入口：项目根目录的 `AGENTS.md`、`CODEBUDDY
 
 ## Spec 与 ADR 目录约定
 
-- 通用项目默认使用 `specs/README.md` 作为业务 Spec 索引，使用 `specs/<Module>/` 按模块存放当前业务 Spec 文件。
-- 通用项目默认使用 `docs/adr/README.md` 作为 ADR 索引，使用 `docs/adr/<Module>/` 按模块或领域存放 ADR 文件。
+- 新建通用项目默认将文档收口在 `docs/` 下：`docs/specs/README.md` + `docs/specs/<Module>/` 存放当前业务 Spec，`docs/todos/` 存放实施计划与 Todo，`docs/adr/README.md` + `docs/adr/<Module>/` 存放长期架构或合同 ADR。
 - 索引文件只负责导航、状态和简短范围说明；具体 Spec 或 ADR 正文必须放在对应模块文件夹内，不在根目录散放业务文件。
-- Spec 记录已确认的当前业务行为、边界、失败行为和验收条件；ADR 记录需要长期保留的架构或合同决策。Plan、brainstorm、审计记录和历史提案不能替代它们。
+- Spec 记录已确认的当前业务行为、边界、失败行为和验收条件；ADR 记录需要长期保留的架构或合同决策。Todo/Plan、brainstorm、审计记录和历史提案不能替代它们。
 - 新增或修改已批准的业务行为时，实施前更新或创建对应模块 Spec 并同步索引。架构或合同决策变化时，同步当前架构文档、受影响的 Contract 和对应 ADR。恢复已有 Spec 行为的简单 Bug 不新建 Spec；普通实现不默认新建 ADR。
-- 文档是否提交到 Git 是项目级发布策略，不改变文档的本地组织和正确性要求；项目可以声明 Specs/ADR/Plan/brainstorm 仅在本机维护，并用 `.gitignore` 防止新的文档进入仓库。
-- 如果项目已经明确采用等价的其他目录，遵循项目入口并保持“索引 + 模块目录 + 模块文件”的组织方式，不复制第二套文档真源。
+- 文档是否提交到 Git 是项目级发布策略，不改变文档的本地组织和正确性要求；项目可以声明 Specs/ADR/Todo/brainstorm 仅在本机维护，并用 `.gitignore` 防止新的文档进入仓库。
+- 如果已有项目已经明确采用等价目录（例如根目录 `specs/` + `plans/`），遵循项目入口并保持“索引 + 模块目录 + 模块文件”的组织方式，不复制第二套文档真源。
 
 ## 数据和不可逆操作
 
@@ -221,6 +220,7 @@ L2 契约/架构变更、非显然 Bug、需求变更门禁和独立方案复核
 
 | 情形 | 加载 |
 |---|---|
+| 从零新建项目或重建架构骨架 | `new-project-bootstrap` Skill |
 | 任务判为 L2，或根因不明的 Bug，或需求变更 | `ai-change-flow` Skill |
 | 方案命中独立方案复核门禁 | `ai-change-flow` Skill 的「独立方案复核」 |
 | 不清楚应该实现什么 | `grilling` Skill |

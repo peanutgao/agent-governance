@@ -158,15 +158,7 @@ def rename_skill(entry, upstream_name, name):
         stream.write(metadata + delimiter + body)
 
 
-def extract_release(repo, commit, skill_paths, checkout, proxy):
-    archive = checkout.parent / "source.tar.gz"
-    url = f"https://codeload.github.com/{repo}/tar.gz/{commit}"
-    command = ["curl", "-fsSL", "--connect-timeout", "8", "--max-time", "45"]
-    if proxy:
-        command.extend(["--proxy", proxy])
-    result = subprocess.run([*command, "-o", str(archive), url], check=False, timeout=50)
-    if result.returncode:
-        raise ValueError(f"下载锁定的上游版本失败: {repo}@{commit} (curl {result.returncode})")
+def extract_archive(archive, repo, commit, skill_paths, checkout):
     prefix = f"{repo.split('/')[1]}-{commit}"
     with tarfile.open(archive) as bundle:
         for member in bundle:
@@ -189,29 +181,74 @@ def extract_release(repo, commit, skill_paths, checkout, proxy):
             destination.chmod(0o755 if member.mode & 0o111 else 0o644)
 
 
+def extract_release(repo, commit, skill_paths, checkout, proxy):
+    archive = checkout.parent / "source.tar.gz"
+    url = f"https://codeload.github.com/{repo}/tar.gz/{commit}"
+    command = [
+        "curl", "-fsSL", "--proto", "=https", "--proto-redir", "=https",
+        "--connect-timeout", "8", "--max-time", "45",
+    ]
+    if proxy:
+        command.extend(["--proxy", proxy])
+    result = subprocess.run([*command, "-o", str(archive), url], check=False, timeout=50)
+    if result.returncode:
+        raise ValueError(f"下载锁定的上游版本失败: {repo}@{commit} (curl {result.returncode})")
+    extract_archive(archive, repo, commit, skill_paths, checkout)
+
+
+def expand_config_path(raw, device):
+    expanded = Path(raw).expanduser()
+    if ".." in expanded.parts:
+        raise ValueError(f"配置目录不能包含路径跳转: {raw}")
+    if expanded.is_absolute():
+        # 若宿主机 HOME 经符号链接映射（如 macOS /var -> /private/var），把前缀对齐到已解析的 device。
+        raw_home = Path.home()
+        if inside(expanded, raw_home) and raw_home != device:
+            return device / expanded.relative_to(raw_home)
+        return expanded
+    return device / expanded
+
+
 def roots_for(device, isolated):
     for tool, (env, default, suffix) in TARGETS.items():
         override = os.environ.get(env) if env and not isolated else None
-        base = Path(override).expanduser() if override else device / default
+        if override:
+            expanded = Path(override).expanduser()
+            if not expanded.is_absolute():
+                raise ValueError(f"{tool} 的配置目录需要使用绝对路径: {expanded}")
+            base = expand_config_path(override, device)
+        else:
+            base = device / default
         if tool == "opencode" and not isolated and os.environ.get("OPENCODE_CONFIG_DIR"):
-            base = Path(os.environ["OPENCODE_CONFIG_DIR"]).expanduser()
+            raw_oc = os.environ["OPENCODE_CONFIG_DIR"]
+            expanded_oc = Path(raw_oc).expanduser()
+            if not expanded_oc.is_absolute():
+                raise ValueError(f"{tool} 的配置目录需要使用绝对路径: {expanded_oc}")
+            base = expand_config_path(raw_oc, device)
             suffix = "skills"
         if tool == "omp" and not isolated:
             profile = os.environ.get("OMP_PROFILE", os.environ.get("PI_PROFILE", "")).strip()
-            config_dir = device / (os.environ.get("PI_CONFIG_DIR") or ".omp")
+            raw_pi_cfg = os.environ.get("PI_CONFIG_DIR")
+            config_dir = expand_config_path(raw_pi_cfg, device) if raw_pi_cfg else device / ".omp"
             if profile and profile != "default":
                 if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", profile) or profile.endswith("."):
                     raise ValueError(f"无效的 omp profile: {profile}")
                 base = config_dir / "profiles" / profile / "agent"
             else:
                 agent_dir = os.environ.get("PI_CODING_AGENT_DIR")
-                base = Path(agent_dir).expanduser() if agent_dir else config_dir / "agent"
-        if not base.is_absolute():
-            raise ValueError(f"{tool} 的配置目录需要使用绝对路径: {base}")
-        yield tool, (base / suffix).resolve()
+                if agent_dir:
+                    expanded_agent = Path(agent_dir).expanduser()
+                    if not expanded_agent.is_absolute():
+                        raise ValueError(f"{tool} 的配置目录需要使用绝对路径: {expanded_agent}")
+                    base = expand_config_path(agent_dir, device)
+                else:
+                    base = config_dir / "agent"
+        if not base.is_absolute() or ".." in base.parts:
+            raise ValueError(f"{tool} 的配置目录需要使用无路径跳转的绝对路径: {base}")
+        yield tool, (base / suffix) if suffix else base
     # Some Codex installations also expose this directory. Handle existing names
     # there without adding a second installation on clean devices.
-    yield "codex-legacy", (device / ".codex/skills").resolve()
+    yield "codex-legacy", device / ".codex/skills"
 
 
 def make_plan(skills, roots, store, state, adopt):
@@ -286,9 +323,40 @@ def sync(args, skills, cli, roots, store, state):
     return int(any(target.action == "conflict" for target in plan))
 
 
+def prune(skills, roots, store, state):
+    plan = make_plan(skills, roots, store, state, set())
+    active_paths = {str(target.path) for target in plan}
+    retained = sorted(set(state["managed"]) - active_paths)
+    if not retained:
+        print("没有可清理的已移除 Skill。")
+        return 0
+    changes = []
+    conflicts = []
+    for raw_path in retained:
+        path = store.destination(Path(raw_path))
+        actual = path_key(path)
+        expected = state["managed"][raw_path]
+        if actual is None:
+            print(f"prune-ref {path}")
+            changes.append((path, None, None))
+        elif actual == expected:
+            print(f"prune     {path}")
+            changes.append((path, None, actual))
+        else:
+            print(f"conflict  {path}")
+            conflicts.append(raw_path)
+    if changes:
+        store.apply(changes, state)
+        print(f"已清理 {len(changes)} 个已移除路径。")
+    if conflicts:
+        print(f"Skills: 保留 {len(conflicts)} 个被外部修改的已移除路径，未删除。", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("plan", "status", "sync", "rollback"))
+    parser.add_argument("command", choices=("plan", "status", "sync", "prune", "rollback"))
     parser.add_argument("--home", type=Path, help="用于隔离验证的用户目录")
     parser.add_argument("--proxy", help="获取 GitHub 源时使用的 HTTP 或 SOCKS 代理")
     parser.add_argument("--adopt", action="append", default=[], metavar="TOOL:SKILL")
@@ -307,7 +375,7 @@ def main():
             roots = list(roots_for(device, args.home is not None))
         if args.command in {"plan", "status"}:
             if store.pending.exists():
-                raise ValueError("检测到中断的同步。运行 sync 或 rollback 恢复后再查看状态。")
+                raise ValueError("检测到中断的同步。运行 sync、prune 或 rollback 恢复后再查看状态。")
             state = store.state()
             plan = make_plan(skills, roots, store, state, set())
             report(plan, state)
@@ -323,6 +391,8 @@ def main():
             if args.command == "rollback":
                 print(f"已回退 {store.rollback(state)} 个路径。")
                 return 0
+            if args.command == "prune":
+                return prune(skills, roots, store, state)
             return sync(args, skills, cli, roots, store, state)
     except BlockingIOError:
         print("已有 Skills 同步正在执行。", file=sys.stderr)

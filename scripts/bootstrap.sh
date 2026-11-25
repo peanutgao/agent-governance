@@ -50,13 +50,13 @@ install_runtime() {
     --prefix "$runtime_stage/env" git 'python=3.12' 'nodejs=24'
   export PATH="$runtime_stage/env/bin:$PATH"
   runtime_ready || fail '新建运行时无法运行。'
-  ln -s "$runtime_stage/env" "$state_dir/runtime"
+  ln -sfn "$runtime_stage/env" "$state_dir/runtime"
   runtime_stage=
 }
 
 cleanup() {
   [[ -z "$runtime_stage" ]] || rm -rf -- "$runtime_stage"
-  rmdir "$state_dir/.lock"
+  rmdir "$state_dir/.lock" 2>/dev/null || true
 }
 
 main() {
@@ -70,6 +70,8 @@ main() {
     *) fail '此系统请使用对应的新设备部署入口。' ;;
   esac
   command -v curl >/dev/null || fail '需要 curl。'
+  local orig_umask
+  orig_umask="$(umask)"
   umask 077
   mkdir -p "$state_dir"
   mkdir "$state_dir/.lock" || fail "已有部署在运行，或上次未正常退出: $state_dir/.lock"
@@ -108,6 +110,9 @@ main() {
   current="$(git -C "$checkout" rev-parse HEAD)"
   published="$(git -C "$checkout" rev-parse refs/remotes/origin/main)"
   [[ "$current" == "$published" ]] || fail "部署目录与 origin/main 不一致: $checkout"
+
+  # 恢复调用方原有 umask，避免把 077 权限泄露给下游分发的共享入口（如 OrbStack work/CLAUDE.md）。
+  umask "$orig_umask"
   bash "$checkout/scripts/install.sh"
 }
 

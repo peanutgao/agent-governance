@@ -25,13 +25,6 @@
       "upstream": "https://github.com/mattpocock/skills/tree/main/skills/engineering/code-review",
       "license": "MIT"
     },
-    "karpathy-guidelines": {
-      "type": "github",
-      "repo": "multica-ai/andrej-karpathy-skills",
-      "path": "skills/karpathy-guidelines",
-      "commit": "2c606141936f1eeef17fa3043a72095b4765b9c2",
-      "digest": "ec9217b6caf46ef2c879bf076f787a7bfcdc4bd2410a13b522728cb816ec939a"
-    },
     "write-swift": {
       "type": "github",
       "repo": "emilkowalski/skills",
@@ -204,18 +197,18 @@
       "path": ".",
       "upstreamName": "impeccable",
       "commit": "b49177d32788f2dc585c42831d845dacf1ebed2c",
-      "digest": "ba79963df6556c7ca59bcd595cf465b32e46222957af911dd70c2ef875f582bc"
-    },
-    "grill-me": {
-      "type": "local",
-      "upstream": "https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me",
-      "license": "MIT"
+      "digest": "ba79963df6556c7ca59bcd595cf465b32e46222957af911dd70c2ef875f582bc",
+      "windowsDigest": "f9af7cac6ba9cbcccde89cf4e33f5646a6fb0307734d9d3a32c292403eb22f30"
     },
     "superpowers": {
       "type": "local",
-      "upstream": "https://github.com/obra/superpowers"
+      "upstream": "https://github.com/peanutgao/agent-governance"
     },
     "ai-change-flow": {
+      "type": "local",
+      "upstream": "https://github.com/peanutgao/agent-governance"
+    },
+    "new-project-bootstrap": {
       "type": "local",
       "upstream": "https://github.com/peanutgao/agent-governance"
     }

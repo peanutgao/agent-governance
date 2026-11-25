@@ -25,7 +25,7 @@ export GIT_COMMITTER_EMAIL="committer@example.invalid"
 expect_success() {
   local label="$1"
   shift
-  if "$CHECKER" "$@" >"$TEST_ROOT/$label.out" 2>&1; then
+  if bash "$CHECKER" "$@" >"$TEST_ROOT/$label.out" 2>&1; then
     printf 'PASS %s\n' "$label"
   else
     printf 'FAIL %s (expected success)\n' "$label" >&2
@@ -137,6 +137,39 @@ expect_failure_code governance-mode-still-checks-identity 1 env GIT_AUTHOR_NAME=
 expect_failure_code governance-mode-bad-usage 2 "$CHECKER" --governance
 expect_success print-policy --print-policy
 expect_success print-policy-governance --print-policy --governance
+if grep -q 'Commit attribution check passed' "$TEST_ROOT/print-policy.out"; then
+  printf 'FAIL print-policy-no-trailing-passed\n' >&2
+  failures=$((failures + 1))
+else
+  printf 'PASS print-policy-no-trailing-passed\n'
+fi
+
+# 新增回归：主流工具 Generated with / Built with 尾注、git commit -v 剪刀线与 Governance-Exception 不豁免 trailer。
+write_message claude-code-footer.txt $'feat: add login\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)'
+write_message cursor-with.txt 'feat: built with Cursor'
+write_message windsurf-using.txt 'chore: written using Windsurf'
+write_message patch-generated-with-claude.txt 'This patch was generated with Claude'
+write_message vite-with.txt 'chore: built with Vite'
+write_message product-images-with-ai.txt 'feat: display images generated with AI'
+write_message product-pagination-cursor.txt 'feat: pagination built with cursor'
+write_message product-sql-cursor.txt 'fix: SQL query written using cursor'
+write_message scissors-verbose-diff.txt $'feat: update tests\n\n# ------------------------ >8 ------------------------\n# Do not modify or cut the line above.\n Co-Authored-By: Claude <noreply@anthropic.com>\n+🤖 Generated with [Claude Code](https://claude.com/claude-code)'
+write_message before-scissors-violation.txt $'feat: update tests\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n# ------------------------ >8 ------------------------\n diff'
+write_message hash-line-without-scissors.txt $'feat: update\n\n# 由 AI 生成本次代码'
+write_message exception-plus-coauthor.txt $'docs: update\n\nGovernance-Exception: docs | approved-by=@owner | reason=ok\nCo-Authored-By: Claude <noreply@anthropic.com>'
+
+expect_failure_code claude-code-footer 1 bash "$CHECKER" --message "$TEST_ROOT/claude-code-footer.txt"
+expect_failure_code cursor-with 1 bash "$CHECKER" --message "$TEST_ROOT/cursor-with.txt"
+expect_failure_code windsurf-using 1 bash "$CHECKER" --message "$TEST_ROOT/windsurf-using.txt"
+expect_failure_code patch-generated-with-claude 1 bash "$CHECKER" --message "$TEST_ROOT/patch-generated-with-claude.txt"
+expect_success vite-with --message "$TEST_ROOT/vite-with.txt"
+expect_success product-images-with-ai --message "$TEST_ROOT/product-images-with-ai.txt"
+expect_success product-pagination-cursor --message "$TEST_ROOT/product-pagination-cursor.txt"
+expect_success product-sql-cursor --message "$TEST_ROOT/product-sql-cursor.txt"
+expect_success scissors-verbose-diff --message "$TEST_ROOT/scissors-verbose-diff.txt"
+expect_failure_code before-scissors-violation 1 bash "$CHECKER" --message "$TEST_ROOT/before-scissors-violation.txt"
+expect_failure_code hash-line-without-scissors 1 bash "$CHECKER" --message "$TEST_ROOT/hash-line-without-scissors.txt"
+expect_failure_code exception-plus-coauthor 1 bash "$CHECKER" --message "$TEST_ROOT/exception-plus-coauthor.txt"
 
 expect_failure_code message-missing-file 2 "$CHECKER" --message "$TEST_ROOT/missing.txt"
 expect_failure_code current-ai-author 1 env GIT_AUTHOR_NAME=Claude GIT_AUTHOR_EMAIL=noreply@anthropic.com "$CHECKER" --message "$TEST_ROOT/human.txt"

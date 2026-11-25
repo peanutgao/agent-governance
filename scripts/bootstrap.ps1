@@ -1,5 +1,6 @@
-# Windows PowerShell 5.1 or later
+# Windows PowerShell 5.1 or later (ASCII-only for PS 5.1 compatibility)
 $ErrorActionPreference = 'Stop'
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
 $source = 'https://raw.githubusercontent.com/peanutgao/agent-governance/main/scripts'
 $state = Join-Path $env:USERPROFILE '.local\share\agent-governance\bootstrap'
 $runtime = Join-Path $state 'runtime-win'
@@ -12,31 +13,60 @@ function Assert-Exit([string] $operation) {
     if ($LASTEXITCODE -ne 0) { throw "$operation failed (exit $LASTEXITCODE)." }
 }
 
-function Use-Runtime([string] $prefix) {
-    if ($prefix) {
-        $env:Path = "$prefix\Library\usr\bin;$prefix\Library\bin;$prefix\Scripts;$prefix;$originalPath"
-        return Join-Path $prefix 'Library\usr\bin\bash.exe'
-    }
-
+function Test-RuntimeReady([string] $bashPath) {
+    if (!(Test-Path -LiteralPath $bashPath -PathType Leaf)) { return $false }
     $git = Get-Command git.exe -ErrorAction SilentlyContinue
-    if (!$git) { return }
-    $gitRoot = Split-Path (Split-Path $git.Source)
-    $bash = Join-Path $gitRoot 'usr\bin\bash.exe'
-    if (!(Test-Path -LiteralPath $bash -PathType Leaf)) { return }
-    $env:Path = "$gitRoot\usr\bin;$gitRoot\bin;$originalPath"
     $python = Get-Command python.exe -ErrorAction SilentlyContinue
     $node = Get-Command node.exe -ErrorAction SilentlyContinue
     $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
-    if (!$python -or !$node -or !$npm -or $python.Source -like "$env:LOCALAPPDATA\Microsoft\WindowsApps\*") {
-        return
+    if (!$git -or !$python -or !$node -or !$npm -or $python.Source -like "$env:LOCALAPPDATA\Microsoft\WindowsApps\*") {
+        return $false
     }
     & $python.Source -c 'import sys; sys.exit(sys.version_info < (3, 9))' 2>$null
-    if ($LASTEXITCODE -ne 0) { return }
+    if ($LASTEXITCODE -ne 0) { return $false }
     $nodeVersion = & $node.Source -p 'process.versions.node' 2>$null
     $version = $null
-    if ($LASTEXITCODE -eq 0 -and [version]::TryParse($nodeVersion, [ref]$version) -and $version -ge [version]'22.20') {
-        return $bash
+    if ($LASTEXITCODE -ne 0 -or ![version]::TryParse($nodeVersion, [ref]$version) -or $version -lt [version]'22.20') {
+        return $false
     }
+    & $npm.Source --version 2>$null | Out-Null
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Use-Runtime([string] $prefix) {
+    if ($prefix) {
+        $env:Path = "$prefix\Library\usr\bin;$prefix\Library\bin;$prefix\Scripts;$prefix;$originalPath"
+        $bash = Join-Path $prefix 'Library\usr\bin\bash.exe'
+        if (Test-RuntimeReady $bash) { return $bash }
+        return $null
+    }
+
+    $git = Get-Command git.exe -ErrorAction SilentlyContinue
+    if (!$git) { return $null }
+    $gitRoot = Split-Path (Split-Path $git.Source)
+    $bash = Join-Path $gitRoot 'usr\bin\bash.exe'
+    if (!(Test-Path -LiteralPath $bash -PathType Leaf)) { return $null }
+    $env:Path = "$gitRoot\usr\bin;$gitRoot\bin;$originalPath"
+    if (Test-RuntimeReady $bash) { return $bash }
+    $env:Path = $originalPath
+    return $null
+}
+
+function Resolve-LocalBootstrapScript {
+    if (!$PSScriptRoot) { return $null }
+    $candidate = Join-Path $PSScriptRoot 'bootstrap.sh'
+    $installScript = Join-Path $PSScriptRoot 'install.sh'
+    $repoRoot = Split-Path $PSScriptRoot -Parent
+    $versionFile = if ($repoRoot) { Join-Path $repoRoot 'VERSION' } else { $null }
+    if (
+        (Test-Path -LiteralPath $candidate -PathType Leaf) -and
+        (Test-Path -LiteralPath $installScript -PathType Leaf) -and
+        $versionFile -and
+        (Test-Path -LiteralPath $versionFile -PathType Leaf)
+    ) {
+        return $candidate
+    }
+    return $null
 }
 
 [void](New-Item -ItemType Directory -Path $state -Force)
@@ -50,6 +80,9 @@ try {
             $savedPrefix = (Get-Content -LiteralPath $runtime -Raw).Trim()
             if ($savedPrefix -notmatch '^runtime-win-[a-f0-9]{32}$') { throw 'Invalid runtime pointer.' }
             $bash = Use-Runtime (Join-Path (Join-Path $state $savedPrefix) 'env')
+            if (!$bash) {
+                throw "Saved Windows runtime is unavailable or corrupted ($runtime). Remove it and re-run."
+            }
         } else {
             $arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
             switch ($arch) {
@@ -73,7 +106,7 @@ try {
             & (Join-Path $temporary 'Library\bin\micromamba.exe') --no-rc create --yes --no-shortcuts --override-channels --channel https://conda.anaconda.org/conda-forge --prefix $prefix git 'python=3.12' 'nodejs=24'
             Assert-Exit 'Runtime installation'
             $bash = Use-Runtime $prefix
-            if (!(Test-Path -LiteralPath $bash -PathType Leaf)) { throw 'The installed Git Bash executable is missing.' }
+            if (!$bash) { throw 'The installed runtime failed verification.' }
             $runtimePointer = Join-Path $runtimeStage 'pointer'
             Set-Content -LiteralPath $runtimePointer -Value $folder -Encoding Ascii
             [System.IO.File]::Move($runtimePointer, $runtime)
@@ -82,8 +115,11 @@ try {
     }
     if (!(Test-Path -LiteralPath $bash -PathType Leaf)) { throw 'Git Bash is unavailable.' }
 
-    $launcher = Join-Path $temporary 'bootstrap.sh'
-    Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 -Uri "$source/bootstrap.sh" -OutFile $launcher
+    $launcher = Resolve-LocalBootstrapScript
+    if (!$launcher) {
+        $launcher = Join-Path $temporary 'bootstrap.sh'
+        Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 -Uri "$source/bootstrap.sh" -OutFile $launcher
+    }
     $cygpath = Join-Path (Split-Path $bash) 'cygpath.exe'
     $launcherPath = & $cygpath -u $launcher
     Assert-Exit 'Launcher path conversion'

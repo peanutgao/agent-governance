@@ -1,0 +1,21 @@
+# 保护治理门禁、CI 与依赖清单（将 @team-leads 替换为真实团队或负责人）
+
+# 治理门禁与 CI
+/.githooks/ @team-leads
+/.github/workflows/ @team-leads
+/.github/CODEOWNERS @team-leads
+/scripts/governance/ @team-leads
+/governance.config.json @team-leads
+/AI-GOVERNANCE.md @team-leads
+
+# 第三方依赖清单（引入新开源依赖须经评审并登记到 docs/architecture/tech-stack.md）
+**/package.json @team-leads
+**/pom.xml @team-leads
+**/build.gradle @team-leads
+**/build.gradle.kts @team-leads
+**/libs.versions.toml @team-leads
+**/Package.swift @team-leads
+**/Podfile @team-leads
+**/go.mod @team-leads
+**/Cargo.toml @team-leads
+**/pyproject.toml @team-leads

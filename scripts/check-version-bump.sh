@@ -3,9 +3,9 @@
 #
 # 用法: bash scripts/check-version-bump.sh
 #
-# 规则文件（global/、tests/、.github/、.githooks/、README.md、onboarding.md 与公共检查脚本）一旦变更，VERSION 必须在同一次或更晚的
-# 提交里 bump，否则各成员的 .gov-version 不变、distribute.sh 会显示「已是最新」，
-# 新规则悄悄地发不下去。本脚本纯本地 git，不依赖 remote。
+# 规则文件（global/、skills/、templates/、scripts/、tests/、.github/、.githooks/、AGENTS.md、README.md、onboarding.md）
+# 一旦变更，VERSION 必须在同一次或更晚的提交里 bump，否则各设备的 .gov-version 不变、
+# distribute.sh 会显示「已是最新」，新规则或脚本悄悄地发不下去。本脚本纯本地 git，不依赖 remote。
 set -euo pipefail
 
 _self="${BASH_SOURCE[0]:-}"
@@ -15,18 +15,16 @@ cd "$REPO_DIR"
 
 RULE_PATHS=(
   AGENTS.md
+  .gitattributes
   global
+  skills
+  templates
+  scripts
   tests
   .github
   .githooks
   README.md
   onboarding.md
-  templates
-  scripts/check-commit-attribution.sh
-  scripts/distribute.sh
-  scripts/check-version-bump.sh
-  scripts/check-rule-paths.sh
-  scripts/sync-project-governance.sh
 )
 
 SEMVER_REGEX='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
@@ -103,7 +101,7 @@ previous_version=""
 if previous_version="$(git show "${version_commit}^:VERSION" 2>/dev/null)"; then
   validate_version_value "VERSION 的上一版本" "$previous_version"
   if ! version_is_greater "$previous_version" "$current_version"; then
-    echo "错误: VERSION 必须比上一版本递增（上一版本: $previous_version，当前版本: $current_version）。" >&2
+    echo "错误: VERSION 必须比上一版本递增（上一版本: ${previous_version}，当前版本: ${current_version}）。" >&2
     exit 1
   fi
 fi

@@ -1,8 +1,6 @@
 .DS_Store
+__pycache__/
+*.pyc
 
-# WorkBuddy 工作区数据：只跟踪 memory/ 下的 markdown 工作记录，
-# 会话缓存与临时产物不入仓。
-.workbuddy-ai/*
-!.workbuddy-ai/memory/
-.workbuddy-ai/memory/*
-!.workbuddy-ai/memory/*.md
+# WorkBuddy 工作区与个人 memory 数据仅留本机，不入公开仓。
+.workbuddy-ai/

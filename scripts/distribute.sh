@@ -13,7 +13,7 @@
 #   3. 门禁：本地仓不落后 origin（有 remote 时）。origin 存在但 fetch 失败一律失败关闭，
 #      绝不「装本地旧内容还显示已是最新」
 #   4. 安装前校验受管目标类型、父目录和冲突，并阻止并行分发
-#   5. 安装前对全部受管路径 + .gov-version 做一次整组快照，内容一致时跳过
+#   5. 安装前对全部受管路径 + .gov-version 做一次整组快照，内容一致且无退役残留时跳过
 #   6. 绝不触碰 settings.json / settings.local.json / 个人 memory / auth / token
 set -euo pipefail
 
@@ -22,14 +22,17 @@ _self="${BASH_SOURCE[0]:-}"
 REPO_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
 GLOBAL_DIR="$REPO_DIR/global"
 VERSION_FILE="$REPO_DIR/VERSION"
-DEVICE_HOME="$HOME"
+DEVICE_HOME="${HOME%/}"
 native_windows=0
 case "$(uname -s)" in
   MINGW*|MSYS*)
     native_windows=1
     DEVICE_HOME="$(cygpath -u "$USERPROFILE")"
+    DEVICE_HOME="${DEVICE_HOME%/}"
     ;;
 esac
+TMP_BASE="${TMPDIR:-/tmp}"
+TMP_BASE="${TMP_BASE%/}"
 PREFIX="$DEVICE_HOME/.codex"
 CANONICAL_AGENTS="$PREFIX/AGENTS.md"
 HOOKS_DIR="$PREFIX/git-hooks"
@@ -38,6 +41,7 @@ WORKBUDDY_RULE_NAME="agent-governance.md"
 
 # 允许 HOME 之外的受管目录：默认关闭，防止测试或误设环境变量写到真实用户目录。
 ALLOW_EXTERNAL_TARGETS="${AGENT_GOVERNANCE_ALLOW_EXTERNAL_TARGETS:-0}"
+BACKUP_KEEP="${AGENT_GOVERNANCE_BACKUP_KEEP:-10}"
 
 safe_path_syntax() {
   case "$1/" in
@@ -73,12 +77,18 @@ resolve_target_dir() {
   printf '%s\n' "$fallback"
 }
 
-PI_AGENT_DIR="$DEVICE_HOME/.pi/agent"
+XDG_DIR="$(resolve_target_dir "${XDG_CONFIG_HOME:-}" "$DEVICE_HOME/.config" "XDG_CONFIG_HOME")"
+CLAUDE_DIR="$(resolve_target_dir "${CLAUDE_CONFIG_DIR:-}" "$DEVICE_HOME/.claude" "CLAUDE_CONFIG_DIR")"
+PI_AGENT_DIR="$(resolve_target_dir "${PI_CODING_AGENT_DIR:-}" "$DEVICE_HOME/.pi/agent" "PI_CODING_AGENT_DIR")"
 OMP_AGENT_DIR="$DEVICE_HOME/.omp/agent"
-OPENCODE_DIR="$DEVICE_HOME/.config/opencode"
+if [[ -n "${OPENCODE_CONFIG_DIR:-}" ]]; then
+  OPENCODE_DIR="$(resolve_target_dir "$OPENCODE_CONFIG_DIR" "$XDG_DIR/opencode" "OPENCODE_CONFIG_DIR")"
+else
+  OPENCODE_DIR="$XDG_DIR/opencode"
+fi
 COMMANDCODE_DIR="$DEVICE_HOME/.commandcode"
-ZED_DIR="$DEVICE_HOME/.config/zed"
-AMP_DIR="$DEVICE_HOME/.config/amp"
+ZED_DIR="$XDG_DIR/zed"
+AMP_DIR="$XDG_DIR/amp"
 COPILOT_DIR="$DEVICE_HOME/.copilot"
 DSH_DIR="$(resolve_target_dir "${DSH_HOME:-}" "$DEVICE_HOME/.dsh" "DSH_HOME")"
 WORKBUDDY_DIR="$(resolve_target_dir "${WORKBUDDY_CONFIG_DIR:-}" "$DEVICE_HOME/.workbuddy-ai" "WORKBUDDY_CONFIG_DIR")"
@@ -91,8 +101,8 @@ WORKBUDDY_RULE_PATH="$WORKBUDDY_DIR/rules/$WORKBUDDY_RULE_NAME"
 WORK_SHARE_DIR="$DEVICE_HOME/Documents/work"
 
 # --- 目标定义 -------------------------------------------------------------
-# copy  ：内容来自仓库源文件，逐字节比对；受管路径为软链接时拒绝安装。
-# link  ：软链接到 CANONICAL_AGENTS，保证多工具共用同一份真源，不会各自漂移。
+# copy     ：内容来自仓库源文件，逐字节比对；受管路径为软链接时拒绝安装。
+# link     ：软链接到 CANONICAL_AGENTS，保证多工具共用同一份真源，不会各自漂移。
 # workbuddy：WorkBuddy 的用户级规则文件需要 frontmatter，内容由源文件生成。
 COPY_SOURCES=(
   "global/AGENTS.md|$PREFIX/AGENTS.md"
@@ -107,7 +117,7 @@ COPY_SOURCES=(
 )
 
 LINK_TARGETS=(
-  "$DEVICE_HOME/.claude/CLAUDE.md|Claude Code"
+  "$CLAUDE_DIR/CLAUDE.md|Claude Code"
   "$PI_AGENT_DIR/AGENTS.md|pi"
   "$OMP_AGENT_DIR/AGENTS.md|omp"
   "$OPENCODE_DIR/AGENTS.md|opencode"
@@ -117,11 +127,6 @@ LINK_TARGETS=(
   "$AMP_DIR/AGENTS.md|Amp"
 )
 
-# 需要 AGENTS.md 的厂商级入口。这些工具的用户级约定各不相同：Copilot 只认
-# copilot-instructions.md，WorkBuddy 只认 rules/*.md + frontmatter，其余读 AGENTS.md。
-# 单独列出以便按各自形态生成，不混进 LINK_TARGETS 的统一处理。
-COPILOT_INSTRUCTIONS_PATH="$COPILOT_DIR/copilot-instructions.md"
-
 if [[ "$native_windows" == 1 ]]; then
   for entry in "${LINK_TARGETS[@]}"; do
     COPY_SOURCES+=("global/AGENTS.md|${entry%|*}")
@@ -129,18 +134,14 @@ if [[ "$native_windows" == 1 ]]; then
   LINK_TARGETS=()
 fi
 
-# 各工具对用户级规则文件的正文长度上限。超限时这些工具是「静默丢弃」而不是报错，
-# 规则看起来装好了、实际不生效，因此分发前必须自己拦住。
-#   WorkBuddy ：<configDir>/rules/*.md，frontmatter alwaysApply 为真即全量注入，上限 40000 字符。
-#   Windsurf  ：global_rules.md 单文件 12000 字符（docs.devin.ai/windsurf）。
-#   Antigravity：单文件 24000 字节，另有全局 20000 token 总预算。
-# 未在这些工具实现中确认「超限静默丢弃」的入口不做长度断言，只记录观察值。
+# 各工具对用户级规则文件的正文上限。超限时工具通常静默丢弃而不是报错，
+# 分发前同时守住字节上限（Antigravity 24000 字节）与字符上限（WorkBuddy 40000 字符）。
+GLOBAL_RULE_MAX_BYTES=24000
 WORKBUDDY_RULE_MAX_CHARS=40000
-GLOBAL_RULE_MAX_CHARS=40000
 
 # 已退役的受管路径：曾由本仓分发，现已从清单移除。
-# 不做退役清理会留下孤儿副本——它不再被比对、不再被更新，却仍在被工具读取，
-# 等于把过时规则留在本机。分发时删除，删除前同样纳入整组快照。
+# 不做退役清理会留下孤儿副本——它不再被比对、不再被更新，却仍在被工具读取。
+# 退役路径刻意不进 MANAGED_PATHS，分发时移至独立的 retired-<时间戳> 备份目录（可人工恢复）。
 RETIRED_PATHS=(
   "$PREFIX/ai-change-implementation-prompt.md"
 )
@@ -149,24 +150,45 @@ MANAGED_PATHS=()
 for entry in "${COPY_SOURCES[@]}"; do
   MANAGED_PATHS+=("${entry#*|}")
 done
-for entry in "${LINK_TARGETS[@]}"; do
-  MANAGED_PATHS+=("${entry%|*}")
-done
+if (( ${#LINK_TARGETS[@]} > 0 )); then
+  for entry in "${LINK_TARGETS[@]}"; do
+    MANAGED_PATHS+=("${entry%|*}")
+  done
+fi
 MANAGED_PATHS+=("$WORKBUDDY_RULE_PATH" "$PREFIX/.gov-version")
 
 lock_dir=
 workbuddy_tmp=
+check_tmp=
 staged_file=
 pending_snapshot=
 release_root=
 cleanup() {
   [[ -z "$staged_file" ]] || rm -f "$staged_file"
   [[ -z "$workbuddy_tmp" ]] || rm -f "$workbuddy_tmp"
+  [[ -z "$check_tmp" ]] || rm -f "$check_tmp"
   [[ -z "$pending_snapshot" ]] || rm -rf "$pending_snapshot"
   [[ -z "$release_root" ]] || rm -rf "$release_root"
-  [[ -z "$lock_dir" ]] || rmdir "$lock_dir"
+  [[ -z "$lock_dir" ]] || rmdir "$lock_dir" 2>/dev/null || true
 }
 trap cleanup EXIT
+
+count_utf8_chars() {
+  local file="$1"
+  local py_cmd=""
+  if [[ "$native_windows" == 1 ]] && command -v python >/dev/null 2>&1; then
+    py_cmd="python"
+  elif command -v python3 >/dev/null 2>&1; then
+    py_cmd="python3"
+  elif command -v python >/dev/null 2>&1; then
+    py_cmd="python"
+  fi
+  if [[ -n "$py_cmd" ]]; then
+    "$py_cmd" -c 'import sys; print(len(open(sys.argv[1], encoding="utf-8").read()))' "$file"
+  else
+    LC_CTYPE="${LC_CTYPE:-en_US.UTF-8}" wc -m <"$file" | tr -d '[:space:]'
+  fi
+}
 
 validate_parent() {
   local path="$1" parent
@@ -210,9 +232,11 @@ preflight() (
   for entry in "${COPY_SOURCES[@]}"; do
     validate_target "${entry#*|}" 0 || return 1
   done
-  for entry in "${LINK_TARGETS[@]}"; do
-    validate_target "${entry%|*}" 1 || return 1
-  done
+  if (( ${#LINK_TARGETS[@]} > 0 )); then
+    for entry in "${LINK_TARGETS[@]}"; do
+      validate_target "${entry%|*}" 1 || return 1
+    done
+  fi
   validate_target "$WORKBUDDY_RULE_PATH" 0 &&
     validate_target "$PREFIX/.gov-version" 0 &&
     validate_parent "$BACKUP_ROOT/manifest" || return 1
@@ -272,10 +296,10 @@ USAGE
 
 # --- 一致性校验 -----------------------------------------------------------
 # 只比较，不安装。用于回答「本机副本是否还等于治理仓源文件」：
-# 手工改过本机副本、或某个工具入口仍是旧版时，这里会列出来并退出 1。
+# 手工改过本机副本、存在未清理退役路径或某个工具入口仍是旧版时，这里会列出来并退出 1。
 check_installed() {
   local drifts=0
-  local entry src dest generated
+  local entry src dest
 
   for entry in "${COPY_SOURCES[@]}"; do
     src="$REPO_DIR/${entry%%|*}"
@@ -292,24 +316,36 @@ check_installed() {
     fi
   done
 
-  for entry in "${LINK_TARGETS[@]}"; do
-    dest="${entry%|*}"
-    if [[ ! -L "$dest" || "$(readlink "$dest")" != "$CANONICAL_AGENTS" ]]; then
-      printf '非软链 %s  →  %s  (%s)\n' "$dest" "$CANONICAL_AGENTS" "${entry#*|}" >&2
-      drifts=$((drifts + 1))
-    fi
-  done
+  if (( ${#LINK_TARGETS[@]} > 0 )); then
+    for entry in "${LINK_TARGETS[@]}"; do
+      dest="${entry%|*}"
+      if [[ ! -L "$dest" || "$(readlink "$dest")" != "$CANONICAL_AGENTS" ]]; then
+        printf '非软链 %s  →  %s  (%s)\n' "$dest" "$CANONICAL_AGENTS" "${entry#*|}" >&2
+        drifts=$((drifts + 1))
+      fi
+    done
+  fi
 
-  generated="$(mktemp "${TMPDIR:-/tmp}/agent-governance-check.XXXXXX")"
-  workbuddy_rule_content >"$generated"
+  check_tmp="$(mktemp "$TMP_BASE/agent-governance-check.XXXXXX")"
+  workbuddy_rule_content >"$check_tmp"
   if [[ ! -f "$WORKBUDDY_RULE_PATH" ]]; then
     printf '缺失  %s\n' "$WORKBUDDY_RULE_PATH" >&2
     drifts=$((drifts + 1))
-  elif ! cmp -s "$generated" "$WORKBUDDY_RULE_PATH"; then
+  elif ! cmp -s "$check_tmp" "$WORKBUDDY_RULE_PATH"; then
     printf '不一致 %s  ←  global/AGENTS.md + frontmatter\n' "$WORKBUDDY_RULE_PATH" >&2
     drifts=$((drifts + 1))
   fi
-  rm -f "$generated"
+  rm -f "$check_tmp"
+  check_tmp=
+
+  if (( ${#RETIRED_PATHS[@]} > 0 )); then
+    for entry in "${RETIRED_PATHS[@]}"; do
+      if [[ -e "$entry" || -L "$entry" ]]; then
+        printf '未退役 %s\n' "$entry" >&2
+        drifts=$((drifts + 1))
+      fi
+    done
+  fi
 
   local latest installed=""
   latest="$(tr -d '[:space:]' <"$VERSION_FILE")"
@@ -331,18 +367,49 @@ check_installed() {
 }
 
 list_targets() {
+  local entry
   printf '受管目标（共 %d 个）:\n' "${#MANAGED_PATHS[@]}"
   for entry in "${COPY_SOURCES[@]}"; do
     printf '  copy      %s  ←  %s\n' "${entry#*|}" "${entry%%|*}"
   done
-  for entry in "${LINK_TARGETS[@]}"; do
-    printf '  link      %s  →  %s  (%s)\n' "${entry%|*}" "$CANONICAL_AGENTS" "${entry#*|}"
-  done
+  if (( ${#LINK_TARGETS[@]} > 0 )); then
+    for entry in "${LINK_TARGETS[@]}"; do
+      printf '  link      %s  →  %s  (%s)\n' "${entry%|*}" "$CANONICAL_AGENTS" "${entry#*|}"
+    done
+  fi
   printf '  workbuddy %s  ←  global/AGENTS.md + frontmatter\n' "$WORKBUDDY_RULE_PATH"
   printf '  state     %s  （版本记录，供门禁与回滚使用）\n' "$PREFIX/.gov-version"
+  if (( ${#RETIRED_PATHS[@]} > 0 )); then
+    for entry in "${RETIRED_PATHS[@]}"; do
+      printf '  retire    %s  （旧副本存在时迁至备份目录并清理）\n' "$entry"
+    done
+  fi
   printf '  git       检测并移除直接配置的旧治理目录覆盖 %s\n' "$HOOKS_DIR"
-  printf '\n长度门禁: AGENTS.md ≤ %s 字符；WorkBuddy 规则 ≤ %s 字符（超限会被工具静默丢弃）\n' \
-    "$GLOBAL_RULE_MAX_CHARS" "$WORKBUDDY_RULE_MAX_CHARS"
+  printf '\n长度门禁: AGENTS.md ≤ %s 字节；WorkBuddy 规则 ≤ %s 字符（超限会被工具静默丢弃）\n' \
+    "$GLOBAL_RULE_MAX_BYTES" "$WORKBUDDY_RULE_MAX_CHARS"
+}
+
+is_allowed_rollback_path() {
+  local candidate="$1" item
+  for item in "${MANAGED_PATHS[@]}"; do
+    [[ "$candidate" == "$item" ]] && return 0
+  done
+  if (( ${#RETIRED_PATHS[@]} > 0 )); then
+    for item in "${RETIRED_PATHS[@]}"; do
+      [[ "$candidate" == "$item" ]] && return 0
+    done
+  fi
+  return 1
+}
+
+is_link_target_path() {
+  local candidate="$1" entry
+  if (( ${#LINK_TARGETS[@]} > 0 )); then
+    for entry in "${LINK_TARGETS[@]}"; do
+      [[ "$candidate" == "${entry%|*}" ]] && return 0
+    done
+  fi
+  return 1
 }
 
 # --- 回滚 -----------------------------------------------------------------
@@ -362,14 +429,26 @@ rollback() {
     return 1
   fi
 
-  local index dest state extra expected
+  local index dest state extra seen_item
   local count=0
+  local -a manifest_dests=()
   local -a states=()
   while IFS=$'\t' read -r index dest state extra; do
-    expected="${MANAGED_PATHS[$count]:-}"
-    if [[ "$index" != "$count" || -z "$expected" || "$dest" != "$expected" || -n "$extra" ]]; then
-      printf '错误: 快照清单中的序号或目标无效: %s\n' "$latest/manifest" >&2
+    if [[ "$index" != "$count" || -z "$dest" || -n "$extra" ]]; then
+      printf '错误: 快照清单中的序号或格式无效: %s\n' "$latest/manifest" >&2
       return 1
+    fi
+    if ! is_allowed_rollback_path "$dest"; then
+      printf '错误: 快照清单包含非受管路径: %s\n' "$dest" >&2
+      return 1
+    fi
+    if (( ${#manifest_dests[@]} > 0 )); then
+      for seen_item in "${manifest_dests[@]}"; do
+        if [[ "$seen_item" == "$dest" ]]; then
+          printf '错误: 快照清单包含重复路径: %s\n' "$dest" >&2
+          return 1
+        fi
+      done
     fi
     case "$state" in
       present)
@@ -377,32 +456,37 @@ rollback() {
           printf '错误: 快照缺少备份文件: %s/%s\n' "$latest" "$index" >&2
           return 1
         fi
-        if [[ -L "$latest/$index" ]]; then
-          local link_entry found=0
-          for link_entry in "${LINK_TARGETS[@]}"; do
-            [[ "$dest" != "${link_entry%|*}" ]] || found=1
-          done
-          if [[ "$found" != 1 ]]; then
-            printf '错误: 非链接目标的备份是软链接: %s\n' "$dest" >&2
-            return 1
-          fi
+        if [[ -L "$latest/$index" ]] && ! is_link_target_path "$dest"; then
+          printf '错误: 非链接目标的备份是软链接: %s\n' "$dest" >&2
+          return 1
         fi
         ;;
       absent) ;;
       *) printf '错误: 快照状态无效: %s\n' "$state" >&2; return 1 ;;
     esac
+    # 写入前即逐项校验目标类型与父目录（含 RETIRED_PATHS），防止半途失败导致半回滚。
+    if is_link_target_path "$dest"; then
+      validate_target "$dest" 1 || return 1
+    else
+      validate_target "$dest" 0 || return 1
+    fi
+    manifest_dests+=("$dest")
     states+=("$state")
     count=$((count + 1))
   done <"$latest/manifest"
-  expected="${#MANAGED_PATHS[@]}"
-  if [[ "$count" != "$expected" ]]; then
-    printf '错误: 快照清单不完整，当前 %s 项，预期 %s 项。\n' "$count" "$expected" >&2
+
+  if (( count == 0 )); then
+    printf '错误: 快照清单为空: %s\n' "$latest/manifest" >&2
     return 1
   fi
 
   for index in "${!states[@]}"; do
-    dest="${MANAGED_PATHS[$index]}"
-    validate_target "$dest" 1
+    dest="${manifest_dests[$index]}"
+    if is_link_target_path "$dest"; then
+      validate_target "$dest" 1
+    else
+      validate_target "$dest" 0
+    fi
     if [[ "${states[$index]}" == absent ]]; then
       rm -f "$dest"
     elif [[ -L "$latest/$index" ]]; then
@@ -414,6 +498,17 @@ rollback() {
         rm -f "$dest"
       fi
       install_copy "$latest/$index" "$dest"
+    fi
+  done
+
+  local managed_item covered
+  for managed_item in "${MANAGED_PATHS[@]}"; do
+    covered=0
+    for seen_item in "${manifest_dests[@]}"; do
+      [[ "$seen_item" == "$managed_item" ]] && { covered=1; break; }
+    done
+    if (( covered == 0 )); then
+      printf '    注意: 旧快照未覆盖新增目标 %s，保持现状。\n' "$managed_item"
     fi
   done
 
@@ -431,6 +526,10 @@ run_local_checks() {
     tests/check-global-hook.sh
     tests/check-version-bump.sh
     tests/check-rule-paths.sh
+    tests/check-bootstrap.sh
+    tests/sync-project-governance.sh
+    tests/init-project-governance.sh
+    tests/skills.sh
   )
 
   for suite in "${suites[@]}"; do
@@ -443,7 +542,7 @@ run_local_checks() {
     ran=$((ran + 1))
   done
 
-  for file in "$REPO_DIR"/scripts/*.sh "$REPO_DIR"/.githooks/*; do
+  for file in "$REPO_DIR"/scripts/*.sh "$REPO_DIR"/.githooks/* "$REPO_DIR"/global/git-hooks/*; do
     [[ -f "$file" ]] || continue
     if ! bash -n "$file" 2>/dev/null; then
       printf '错误: 语法检查失败，拒绝分发: %s\n' "$file" >&2
@@ -491,7 +590,7 @@ check_remote_freshness() {
 }
 
 # --- 迁移旧版全局钩子配置 --------------------------------------------------
-# 只从直接全局配置中删除旧版分发自己写入的字面值；包含文件和其他配置保持原状。
+# 只从直接全局配置中删除旧版分发自己写入的字面值（含 ~ 写法或尾斜杠）；包含文件和其他配置保持原状。
 configured_hooks_path() {
   local value status
   if value="$(git config --global --includes --path --get core.hooksPath)"; then
@@ -508,10 +607,25 @@ configured_hooks_path() {
   fi
 }
 
+normalize_hooks_value() {
+  local val="$1"
+  val="${val%$'\r'}"
+  if [[ "$val" == "~" ]]; then
+    val="$DEVICE_HOME"
+  elif [[ "$val" == "~/"* ]]; then
+    val="$DEVICE_HOME/${val#\~/}"
+  elif [[ "$native_windows" == 1 && "$val" == *\\* || ( "$native_windows" == 1 && "$val" =~ ^[A-Za-z]: ) ]]; then
+    val="$(cygpath -au "$val")"
+  fi
+  printf '%s\n' "${val%/}"
+}
+
 check_no_legacy_override() {
-  local path
+  local path norm
   path="$(configured_hooks_path)" || return 1
-  if [[ "$path" == "$HOOKS_DIR" || ( -n "$path" && "$path" -ef "$HOOKS_DIR" ) ]]; then
+  [[ -n "$path" ]] || return 0
+  norm="$(normalize_hooks_value "$path")"
+  if [[ "$norm" == "$HOOKS_DIR" || ( -n "$norm" && "$norm" -ef "$HOOKS_DIR" ) ]]; then
     printf '错误: Git 仍全局覆盖为旧治理目录 %s，项目原生钩子会受影响。\n' "$path" >&2
     printf '直接旧配置可由分发迁移；若来自包含文件或系统配置，请在对应来源处理。\n' >&2
     return 1
@@ -519,10 +633,17 @@ check_no_legacy_override() {
 }
 
 remove_legacy_override() {
-  local direct status
+  local direct status raw norm removed=0
   if direct="$(git config --global --no-includes --get-all core.hooksPath)"; then
-    if printf '%s\n' "$direct" | grep -Fxq -- "$HOOKS_DIR"; then
-      git config --global --fixed-value --unset-all core.hooksPath "$HOOKS_DIR"
+    while IFS= read -r raw; do
+      [[ -n "$raw" ]] || continue
+      norm="$(normalize_hooks_value "$raw")"
+      if [[ "$norm" == "$HOOKS_DIR" || ( -n "$norm" && "$norm" -ef "$HOOKS_DIR" ) ]]; then
+        git config --global --fixed-value --unset-all core.hooksPath "$raw"
+        removed=1
+      fi
+    done <<<"$direct"
+    if (( removed == 1 )); then
       printf '    已移除旧治理目录的全局覆盖。各项目需验证自己的提交归属检查。\n'
     fi
   else
@@ -538,7 +659,7 @@ workbuddy_rule_content() {
   cat "$GLOBAL_DIR/AGENTS.md"
 }
 
-# --- 快照 -----------------------------------------------------------------
+# --- 快照与保留策略 --------------------------------------------------------
 create_snapshot() {
   local snapshot_dir="$1"
   local manifest="$snapshot_dir/manifest"
@@ -561,20 +682,51 @@ create_snapshot() {
   done
 }
 
-# --- 退役路径清理 ---------------------------------------------------------
-# 删除不再受管的旧分发副本。退役路径刻意不进 MANAGED_PATHS：那会改变快照清单的
-# 项数契约，使既有快照无法回滚。删除前把内容移到独立的 retired 目录，可人工恢复。
-remove_retired_paths() {
-  local retired=()
-  local path
-  for path in "${RETIRED_PATHS[@]}"; do
-    [[ -e "$path" || -L "$path" ]] || continue
-    retired+=("$path")
+prune_old_backups() {
+  if [[ ! "$BACKUP_KEEP" =~ ^[1-9][0-9]*$ ]]; then
+    printf '错误: AGENT_GOVERNANCE_BACKUP_KEEP 必须是正整数: %s\n' "$BACKUP_KEEP" >&2
+    return 1
+  fi
+  local -a snapshots=()
+  local dir
+  while IFS= read -r dir; do
+    [[ -n "$dir" ]] || continue
+    snapshots+=("${dir%/}")
+  done < <(ls -1d "$BACKUP_ROOT"/[0-9]*/ 2>/dev/null | LC_ALL=C sort || true)
+
+  local total="${#snapshots[@]}"
+  if (( total <= BACKUP_KEEP )); then
+    return 0
+  fi
+  local excess=$((total - BACKUP_KEEP))
+  local i
+  for ((i = 0; i < excess; i++)); do
+    dir="${snapshots[$i]}"
+    [[ -d "$dir" && ! -L "$dir" ]] || continue
+    rm -rf "$dir"
   done
+}
+
+# --- 退役路径清理 ---------------------------------------------------------
+# 删除不再受管的旧分发副本。退役路径刻意不进 MANAGED_PATHS，移到独立的 retired 目录，可人工恢复。
+remove_retired_paths() {
+  local -a retired=()
+  local path
+  if (( ${#RETIRED_PATHS[@]} > 0 )); then
+    for path in "${RETIRED_PATHS[@]}"; do
+      [[ -e "$path" || -L "$path" ]] || continue
+      retired+=("$path")
+    done
+  fi
   (( ${#retired[@]} > 0 )) || return 0
 
-  local backup_dir
-  backup_dir="$BACKUP_ROOT/retired-$(date +%Y%m%d-%H%M%S)"
+  local ts sequence=0 backup_dir
+  ts="$(date +%Y%m%d-%H%M%S)"
+  while :; do
+    backup_dir="$(printf '%s/retired-%s-%04d' "$BACKUP_ROOT" "$ts" "$sequence")"
+    [[ ! -e "$backup_dir" && ! -L "$backup_dir" ]] && break
+    sequence=$((sequence + 1))
+  done
   mkdir -p "$backup_dir" || return 1
   for path in "${retired[@]}"; do
     local name
@@ -619,6 +771,10 @@ main() {
   for entry in "${COPY_SOURCES[@]}"; do
     [[ -f "$REPO_DIR/${entry%%|*}" ]] || { printf '错误: 缺少 %s\n' "${entry%%|*}" >&2; return 1; }
   done
+  if [[ ! "$BACKUP_KEEP" =~ ^[1-9][0-9]*$ ]]; then
+    printf '错误: AGENT_GOVERNANCE_BACKUP_KEEP 必须是正整数: %s\n' "$BACKUP_KEEP" >&2
+    return 1
+  fi
 
   printf '==> agent-governance 个人全局基线分发\n'
 
@@ -632,7 +788,7 @@ main() {
     printf '错误: 治理仓提交在验证期间发生变化，请重新运行。\n' >&2
     return 1
   fi
-  release_root="$(mktemp -d "${TMPDIR:-/tmp}/agent-governance-release.XXXXXX")"
+  release_root="$(mktemp -d "$TMP_BASE/agent-governance-release.XXXXXX")"
   git -C "$REPO_DIR" archive "$release_commit" VERSION global scripts/check-commit-attribution.sh |
     tar -xf - -C "$release_root"
   GLOBAL_DIR="$release_root/global"
@@ -649,20 +805,19 @@ main() {
   [[ -n "$installed" ]] && printf '    本机已装: %s\n' "$installed"
 
   local entry dest
-  # 长度门禁：规则正文超过工具上限时，工具通常「静默丢弃」而不是报错——规则看起来装好了、
-  # 实际不生效。分发前必须先拦住，不能把失效的安装当成成功。
-  local agents_chars
-  agents_chars="$(wc -m <"$GLOBAL_DIR/AGENTS.md" | tr -d '[:space:]')"
-  if (( agents_chars > GLOBAL_RULE_MAX_CHARS )); then
-    printf '错误: AGENTS.md 正文 %s 字符，超过通用上限 %s，部分工具会静默丢弃。\n' "$agents_chars" "$GLOBAL_RULE_MAX_CHARS" >&2
+  # 长度门禁：同时检验字节上限（防止按字节截断/丢弃）与 UTF-8 字符上限（WorkBuddy）。
+  local agents_bytes
+  agents_bytes="$(wc -c <"$GLOBAL_DIR/AGENTS.md" | tr -d '[:space:]')"
+  if (( agents_bytes > GLOBAL_RULE_MAX_BYTES )); then
+    printf '错误: AGENTS.md 正文 %s 字节，超过通用上限 %s 字节，部分工具会静默丢弃。\n' "$agents_bytes" "$GLOBAL_RULE_MAX_BYTES" >&2
     return 1
   fi
 
   # 提前生成 WorkBuddy 规则，避免发布超过工具的长度限制的内容。
-  workbuddy_tmp="$(mktemp "${TMPDIR:-/tmp}/agent-governance-workbuddy.XXXXXX")"
+  workbuddy_tmp="$(mktemp "$TMP_BASE/agent-governance-workbuddy.XXXXXX")"
   workbuddy_rule_content >"$workbuddy_tmp"
   local workbuddy_chars
-  workbuddy_chars="$(wc -m <"$workbuddy_tmp" | tr -d '[:space:]')"
+  workbuddy_chars="$(count_utf8_chars "$workbuddy_tmp")"
   if (( workbuddy_chars > WORKBUDDY_RULE_MAX_CHARS )); then
     printf '错误: WorkBuddy 规则正文 %s 字符，超过上限 %s，会被静默丢弃。\n' "$workbuddy_chars" "$WORKBUDDY_RULE_MAX_CHARS" >&2
     return 1
@@ -682,14 +837,16 @@ main() {
     plan_copy_dest+=("$dest")
   done
 
-  for entry in "${LINK_TARGETS[@]}"; do
-    dest="${entry%|*}"
-    if [[ -L "$dest" && "$(readlink "$dest")" == "$CANONICAL_AGENTS" ]]; then
-      continue
-    fi
-    plan_link_dest+=("$dest")
-    plan_link_name+=("${entry#*|}")
-  done
+  if (( ${#LINK_TARGETS[@]} > 0 )); then
+    for entry in "${LINK_TARGETS[@]}"; do
+      dest="${entry%|*}"
+      if [[ -L "$dest" && "$(readlink "$dest")" == "$CANONICAL_AGENTS" ]]; then
+        continue
+      fi
+      plan_link_dest+=("$dest")
+      plan_link_name+=("${entry#*|}")
+    done
+  fi
 
   if [[ ! -f "$WORKBUDDY_RULE_PATH" ]] || ! cmp -s "$workbuddy_tmp" "$WORKBUDDY_RULE_PATH"; then
     need_workbuddy=1
@@ -699,9 +856,11 @@ main() {
 
   # 退役清理要在「无需更新」短路之前：孤儿副本本身就是需要处理的状态。
   local retired_count=0
-  for entry in "${RETIRED_PATHS[@]}"; do
-    [[ -e "$entry" || -L "$entry" ]] && retired_count=$((retired_count + 1))
-  done
+  if (( ${#RETIRED_PATHS[@]} > 0 )); then
+    for entry in "${RETIRED_PATHS[@]}"; do
+      [[ -e "$entry" || -L "$entry" ]] && retired_count=$((retired_count + 1))
+    done
+  fi
 
   if (( ${#plan_copy_dest[@]} == 0 && ${#plan_link_dest[@]} == 0 && need_workbuddy == 0 && retired_count == 0 )) && cmp -s "$PREFIX/.gov-version" "$VERSION_FILE"; then
     printf '==> 无需更新（已是 %s）。\n' "$latest"
@@ -723,21 +882,25 @@ main() {
   printf '    已快照当前状态: %s\n' "${snapshot_dir#"$DEVICE_HOME"/}"
 
   local index executable
-  for index in "${!plan_copy_dest[@]}"; do
-    dest="${plan_copy_dest[$index]}"
-    executable=0
-    [[ "$dest" != "$HOOKS_DIR/"* ]] || executable=1
-    install_copy "${plan_copy_src[$index]}" "$dest" "$executable"
-    printf '    已安装: %s\n' "$dest"
-  done
+  if (( ${#plan_copy_dest[@]} > 0 )); then
+    for index in "${!plan_copy_dest[@]}"; do
+      dest="${plan_copy_dest[$index]}"
+      executable=0
+      [[ "$dest" != "$HOOKS_DIR/"* ]] || executable=1
+      install_copy "${plan_copy_src[$index]}" "$dest" "$executable"
+      printf '    已安装: %s\n' "$dest"
+    done
+  fi
 
-  for index in "${!plan_link_dest[@]}"; do
-    dest="${plan_link_dest[$index]}"
-    validate_target "$dest" 1
-    mkdir -p "$(dirname "$dest")"
-    ln -sfn "$CANONICAL_AGENTS" "$dest"
-    printf '    已链接: %s → %s  (%s)\n' "$dest" "$CANONICAL_AGENTS" "${plan_link_name[$index]}"
-  done
+  if (( ${#plan_link_dest[@]} > 0 )); then
+    for index in "${!plan_link_dest[@]}"; do
+      dest="${plan_link_dest[$index]}"
+      validate_target "$dest" 1
+      mkdir -p "$(dirname "$dest")"
+      ln -sfn "$CANONICAL_AGENTS" "$dest"
+      printf '    已链接: %s → %s  (%s)\n' "$dest" "$CANONICAL_AGENTS" "${plan_link_name[$index]}"
+    done
+  fi
 
   if (( need_workbuddy == 1 )); then
     install_copy "$workbuddy_tmp" "$WORKBUDDY_RULE_PATH"
@@ -747,6 +910,7 @@ main() {
   remove_retired_paths
 
   install_copy "$VERSION_FILE" "$PREFIX/.gov-version"
+  prune_old_backups
 
   if [[ -n "$installed" && "$installed" == "$latest" ]]; then
     printf '    ⚠️ 受管副本与基线不一致但版本号相同，已快照并修复。\n'

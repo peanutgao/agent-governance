@@ -3,11 +3,25 @@ import errno
 import hashlib
 import json
 import os
+import re
 import shutil
 import stat
 import sys
 from pathlib import Path
 from uuid import uuid4
+
+
+HEX_TX = re.compile(r"^[0-9a-f]{32}$")
+DEFAULT_BACKUP_KEEP = 10
+
+
+def backup_keep_limit():
+    raw = os.environ.get("AGENT_GOVERNANCE_SKILLS_BACKUP_KEEP")
+    if raw is None or raw == "":
+        return DEFAULT_BACKUP_KEEP
+    if not re.fullmatch(r"[1-9][0-9]*", raw):
+        raise ValueError(f"AGENT_GOVERNANCE_SKILLS_BACKUP_KEEP 必须是正整数: {raw}")
+    return int(raw)
 
 
 def path_key(path, *, ignore_executable=os.name == "nt"):
@@ -57,14 +71,26 @@ def publish_path(staged, destination):
     source, target = os.fsencode(staged), os.fsencode(destination)
     if sys.platform == "darwin":
         # <sys/stdio.h> RENAME_EXCL
-        result = libc.renamex_np(source, target, 0x00000004)
+        renamex = libc.renamex_np
+        renamex.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        renamex.restype = ctypes.c_int
+        result = renamex(source, target, 0x00000004)
     elif sys.platform.startswith("linux") and hasattr(libc, "renameat2"):
         # <fcntl.h> AT_FDCWD and <linux/fs.h> RENAME_NOREPLACE
-        result = libc.renameat2(-100, source, -100, target, 1)
+        renameat2 = libc.renameat2
+        renameat2.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        renameat2.restype = ctypes.c_int
+        result = renameat2(-100, source, -100, target, 1)
     else:
         raise ValueError("当前平台缺少原子无覆盖重命名支持")
     if result:
         error = ctypes.get_errno()
+        if sys.platform.startswith("linux") and error in {errno.EINVAL, errno.ENOSYS, errno.EOPNOTSUPP}:
+            raise OSError(
+                error,
+                f"当前文件系统不支持 renameat2(RENAME_NOREPLACE): {os.strerror(error)}",
+                str(destination),
+            )
         raise OSError(error, os.strerror(error), str(destination))
 
 
@@ -117,22 +143,38 @@ class Store:
 
     def destination(self, path):
         path = Path(path)
-        parent = path.parent.resolve()
-        if parent != path.parent or inside(parent, self.root):
-            raise ValueError(f"目标父目录已改变或指向同步状态目录: {path}")
+        if not path.is_absolute() or ".." in path.parts:
+            raise ValueError(f"目标路径必须是无路径跳转的绝对路径: {path}")
+        parent = path.parent
         if not self.allow_external and not inside(parent, self.device):
+            raise ValueError(f"目标目录越出用户目录: {path}")
+        # 与 distribute.sh 一致：拒绝用户目录之下任何一层父目录是软链，防止静默穿越或越界写入。
+        stop = self.device if inside(parent, self.device) else Path(parent.anchor)
+        cursor = parent
+        while cursor != stop and cursor != Path(cursor.anchor):
+            if cursor.is_symlink():
+                raise ValueError(f"目标父目录包含软链: {cursor}")
+            if cursor.exists() and not cursor.is_dir():
+                raise ValueError(f"目标父目录不是普通目录: {cursor}")
+            cursor = cursor.parent
+        resolved_parent = parent.resolve()
+        if resolved_parent != parent or inside(resolved_parent, self.root):
+            raise ValueError(f"目标父目录已改变或指向同步状态目录: {path}")
+        if not self.allow_external and not inside(resolved_parent, self.device):
             raise ValueError(f"目标目录越出用户目录: {path}")
         return path
 
     def snapshot(self, transaction):
-        if not isinstance(transaction, str) or len(transaction) != 32 or any(
-            c not in "0123456789abcdef" for c in transaction
-        ):
+        if not isinstance(transaction, str) or not HEX_TX.fullmatch(transaction):
             raise ValueError("无效的 Skills 快照编号")
         return self.root / transaction
 
     def replace(self, path, source, expected, staging):
         path = self.destination(path)
+        if source is None and expected is None:
+            if path_key(path) is not None:
+                raise ValueError(f"同步期间路径发生变化: {path}")
+            return
         path.parent.mkdir(parents=True, exist_ok=True)
         staging.mkdir()
         old = staging / "old"
@@ -194,7 +236,38 @@ class Store:
         self.pending.unlink()
         shutil.rmtree(snapshot)
 
+    def prune_snapshots(self, latest_tx):
+        keep = backup_keep_limit()
+        kept = []
+        cursor = latest_tx
+        seen = set()
+        while cursor is not None and len(kept) < keep:
+            if cursor in seen:
+                break
+            seen.add(cursor)
+            snap = self.snapshot(cursor)
+            record_path = snap / "record.json"
+            if not record_path.is_file():
+                break
+            kept.append((cursor, snap, read_json(record_path)))
+            cursor = kept[-1][2]["state"].get("latest")
+
+        if kept and cursor is not None:
+            # 截断保留链表尾节点，避免连续 rollback 追踪到已被裁剪的快照而报 FileNotFoundError。
+            _, tail_snap, tail_record = kept[-1]
+            tail_state = dict(tail_record["state"])
+            tail_state["latest"] = None
+            write_json(tail_snap / "record.json", {**tail_record, "state": tail_state})
+
+        kept_names = {tx for tx, _, _ in kept}
+        for child in self.root.iterdir():
+            if child.is_dir() and not child.is_symlink() and HEX_TX.fullmatch(child.name):
+                if child.name not in kept_names:
+                    shutil.rmtree(child)
+
     def apply(self, changes, state, rollback_to=None):
+        if rollback_to is None:
+            backup_keep_limit()
         transaction = uuid4().hex
         snapshot = self.snapshot(transaction)
         snapshot.mkdir(mode=0o700)
@@ -222,7 +295,11 @@ class Store:
                 self.replace(path, source, expected, staging)
             if rollback_to is None:
                 managed = dict(state["managed"])
-                managed.update({entry["path"]: entry["after"] for entry in entries})
+                for entry in entries:
+                    if entry["after"] is None:
+                        managed.pop(entry["path"], None)
+                    else:
+                        managed[entry["path"]] = entry["after"]
                 next_state = {"managed": managed, "latest": transaction}
             else:
                 next_state = dict(rollback_to)
@@ -234,6 +311,8 @@ class Store:
         if rollback_to is not None:
             shutil.rmtree(snapshot)
             shutil.rmtree(self.snapshot(state["latest"]))
+        else:
+            self.prune_snapshots(next_state["latest"])
 
     def rollback(self, state):
         if state["latest"] is None:

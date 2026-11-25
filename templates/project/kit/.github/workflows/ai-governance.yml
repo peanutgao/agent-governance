@@ -1,0 +1,59 @@
+name: Project Governance Gate
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  governance:
+    name: Spec Sync & Commit Attribution
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure LF checkout
+        run: git config --global core.autocrlf false
+
+      - name: Checkout full history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Verify spec sync & commit attribution
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_AFTER_SHA: ${{ github.sha }}
+          PUSH_DELETED: ${{ github.event.deleted }}
+        run: |
+          set -euo pipefail
+          all_zero_sha="0000000000000000000000000000000000000000"
+
+          if [[ "$PUSH_DELETED" == "true" || "$PUSH_AFTER_SHA" == "$all_zero_sha" ]]; then
+            echo "No commits to check for branch deletion push."
+            exit 0
+          fi
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            RANGE="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+            python3 scripts/governance/check-spec-sync.py --range "$RANGE"
+            bash scripts/governance/check-commit-attribution.sh --range "$RANGE"
+          elif [[ "$PUSH_BEFORE_SHA" == "$all_zero_sha" ]]; then
+            python3 scripts/governance/check-spec-sync.py --range "${all_zero_sha}..${PUSH_AFTER_SHA}"
+            bash scripts/governance/check-commit-attribution.sh --commit "$PUSH_AFTER_SHA"
+          else
+            RANGE="${PUSH_BEFORE_SHA}..${PUSH_AFTER_SHA}"
+            python3 scripts/governance/check-spec-sync.py --range "$RANGE"
+            bash scripts/governance/check-commit-attribution.sh --range "$RANGE"
+          fi
+
+      # 按项目技术栈接入原生 Linter 与测试（示例）：
+      # - name: Native lint & test
+      #   run: npm run lint && npm test
+      #   # Java: ./mvnw -q checkstyle:check test
+      #   # iOS: swiftlint lint --strict && swift test
+      #   # Kotlin: ./gradlew detekt test

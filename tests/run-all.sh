@@ -12,8 +12,10 @@ SUITES=(
   tests/check-global-hook.sh
   tests/check-version-bump.sh
   tests/check-rule-paths.sh
+  tests/check-bootstrap.sh
   tests/distribute.sh
   tests/sync-project-governance.sh
+  tests/init-project-governance.sh
   tests/skills.sh
 )
 

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Commit-message governance checks: Spec sync + final Commit Attribution gate.
+set -euo pipefail
+
+MSG_FILE="${1:-}"
+[[ -n "$MSG_FILE" ]] || { printf '错误: commit-msg 钩子缺少消息文件路径。\n' >&2; exit 2; }
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+GOV_DIR="$REPO_ROOT/scripts/governance"
+# shellcheck source=../scripts/governance/_python.sh
+source "$GOV_DIR/_python.sh"
+PY_CMD="$(resolve_gov_python)"
+
+"$PY_CMD" "$GOV_DIR/check-spec-sync.py" --root "$REPO_ROOT" --staged --message "$MSG_FILE"
+
+# Commit attribution check MUST remain the final step of commit-msg.
+exec bash "$GOV_DIR/check-commit-attribution.sh" --message "$MSG_FILE"

@@ -40,11 +40,13 @@ USAGE
 }
 
 CO_AUTHOR_TRAILER_REGEX='^[[:space:]]*co[[:space:]_.-]*author(ed)?[[:space:]_.-]*(by)?[[:space:]]*:'
+GIT_SCISSORS_REGEX='^#[[:space:]]*-+[[:space:]]*>8[[:space:]]*-+[[:space:]]*$'
 
 # --- 身份层 ---------------------------------------------------------------
 # 大小写不敏感。不含 agent ——「Agent Smith」这类人类姓名会被误伤。
 # 不含裸 ai ——「Ai Wei」这类真实姓名会被误伤；裸 AI 由下面的全大写规则兜住。
-KNOWN_AI_IDENTITY_REGEX='(^|[^[:alnum:]])(人工智能|llm|large[[:space:]_.-]+language[[:space:]_.-]+model|chatgpt|gpt|openai|anthropic|claude|claudecode|codex|copilot|cursor|codeium|gemini|deepseek|qwen|mistral|minimax|aider|windsurf|replit|superpowers|commandcode\.ai|commandcodebot|assistant|bot|[[:alnum:]]+[._-]bot|bot[._-][[:alnum:]]+|[[:alnum:]]+\[bot\])([^[:alnum:]]|$)'
+# 不含短歧义词（如 amp/omp），只收录明确无歧义的 AI/自动化标识。
+KNOWN_AI_IDENTITY_REGEX='(^|[^[:alnum:]])(人工智能|llm|large[[:space:]_.-]+language[[:space:]_.-]+model|chatgpt|gpt|openai|anthropic|claude|claudecode|codex|copilot|cursor|codeium|gemini|deepseek|qwen|mistral|minimax|aider|windsurf|replit|superpowers|commandcode\.ai|commandcodebot|workbuddy|codebuddy|antigravity|opencode|devin|cline|roocode|trae|augment|junie|assistant|bot|[[:alnum:]]+[._-]bot|bot[._-][[:alnum:]]+|[[:alnum:]]+\[bot\])([^[:alnum:]]|$)'
 
 # 身份层的补充：只匹配全大写 AI，避免把「Ai Wei」这类真实姓名拦下。
 UPPERCASE_AI_IDENTITY_REGEX='(^|[^[:alnum:]])AI([^[:alnum:]]|$)'
@@ -52,9 +54,10 @@ UPPERCASE_AI_IDENTITY_REGEX='(^|[^[:alnum:]])AI([^[:alnum:]]|$)'
 # --- message 披露短语层 ---------------------------------------------------
 # 匹配对本次提交或实现的归属。功能名、普通生成物和领域术语本身可用。
 MESSAGE_AI_ACTION_REGEX='^[[:space:]]*([[:alnum:]_()/.-]+:[[:space:]]*)?(ai|a[[:space:]_.-]*i)([[:space:]_.-]+(agent|assistant))?[[:space:]_.-]+(assisted|generated|authored|written|implemented|produced|created)[[:space:]_.-]+(commit|patch|change|implementation|code|diff)([^[:alnum:]]|$)'
-MESSAGE_GENERATED_BY_REGEX='(^[[:space:]]*([[:alnum:]_()/.-]+:[[:space:]]*)?|(^|[^[:alnum:]])(commit|patch|change|implementation|code|diff)[[:space:]]+((is|was|were)[[:space:]]+)?)(generated|written|authored|created|produced|implemented|assisted|built|made)[[:space:]_.-]+by[[:space:]_.-]+(ai|llm|machine|model|assistant|agent|bot|claude|claudecode|codex|chatgpt|gpt|openai|anthropic|copilot|cursor|codeium|gemini|deepseek|qwen|mistral|minimax|aider|windsurf|replit|commandcode)([^[:alnum:]]|$)'
-MESSAGE_ZH_REGEX='((由|借助|使用|通过|利用)[[:space:]]*)?(ai|人工智能|大模型|语言模型|llm|claude([[:space:]]*code)?|codex|copilot|chatgpt|gpt|deepseek|assistant|agent|bot)[[:space:]]*(生成|编写|撰写|实现|完成|辅助|协助|提交|修改|重构)[[:space:]]*((本次|这次|此次|此)(提交|改动|补丁|实现|代码)|[。！![:space:]]*$)'
-MESSAGE_DISCLOSURE_REGEX="$MESSAGE_AI_ACTION_REGEX|$MESSAGE_GENERATED_BY_REGEX|$MESSAGE_ZH_REGEX"
+MESSAGE_GENERATED_BY_REGEX='(^[[:space:]]*([[:alnum:]_()/.-]+:[[:space:]]*)?|(^|[^[:alnum:]])(commit|patch|change|implementation|code|diff)[[:space:]]+((is|was|were)[[:space:]]+)?)(generated|written|authored|created|produced|implemented|assisted|built|made)[[:space:]_.-]+by[[:space:]_.-]+(ai|llm|machine|model|assistant|agent|bot|claude([[:space:]_.-]*code)?|codex|chatgpt|gpt|openai|anthropic|copilot|cursor|codeium|gemini|deepseek|qwen|mistral|minimax|aider|windsurf|replit|commandcode|workbuddy|codebuddy|antigravity|opencode|devin|cline|roocode|trae|augment|junie)([^[:alnum:]]|$)'
+MESSAGE_GENERATED_WITH_REGEX='(^[[:space:]]*(([[:alnum:]_()/.-]+:[[:space:]]*)|([^[:alnum:][:space:]][[:space:]]*)+)?|(^|[^[:alnum:]])(commit|patch|change|implementation|code|diff)[[:space:]]+((is|was|were)[[:space:]]+)?)(generated|written|authored|created|produced|implemented|built|made)[[:space:]_.-]+(with|using)[[:space:]_.-]+\[?(ai|llm|claude([[:space:]_.-]*code)?|codex|chatgpt|gpt|openai|anthropic|copilot|cursor|codeium|gemini|deepseek|qwen|mistral|minimax|aider|windsurf|replit|commandcode|workbuddy|codebuddy|antigravity|opencode|devin|cline|roocode|trae|augment|junie)\]?([^[:alnum:]]|$)'
+MESSAGE_ZH_REGEX='((由|借助|使用|通过|利用)[[:space:]]*)?(ai|人工智能|大模型|语言模型|llm|claude([[:space:]]*code)?|codex|copilot|chatgpt|gpt|deepseek|cursor|windsurf|gemini|workbuddy|codebuddy|antigravity|opencode|devin|cline|assistant|agent|bot)[[:space:]]*(生成|编写|撰写|实现|完成|辅助|协助|提交|修改|重构)[[:space:]]*((本次|这次|此次|此)(提交|改动|补丁|实现|代码)|[。！![:space:]]*$)'
+MESSAGE_DISCLOSURE_REGEX="$MESSAGE_AI_ACTION_REGEX|$MESSAGE_GENERATED_BY_REGEX|$MESSAGE_GENERATED_WITH_REGEX|$MESSAGE_ZH_REGEX"
 
 governance_mode=0
 violations=0
@@ -78,11 +81,31 @@ match_any_line() {
   local pattern="$2"
   local line
   while IFS= read -r line; do
+    line="${line%$'\r'}"
     if [[ "$line" =~ $pattern ]]; then
       return 0
     fi
   done <<<"$text"
   return 1
+}
+
+# 仅在 git commit -v 的精确剪刀线处截断，防止把附带的 diff 上下文误判为提交消息；
+# 不剥离普通 # 注释行，避免与 `git commit -m`（默认保留 # 行）在本地与 CI 间产生分叉。
+strip_git_scissors() {
+  local message_file="$1"
+  local line clean=""
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    if [[ "$line" =~ $GIT_SCISSORS_REGEX ]]; then
+      break
+    fi
+    if [[ -n "$clean" ]]; then
+      clean+=$'\n'"$line"
+    else
+      clean="$line"
+    fi
+  done <"$message_file"
+  printf '%s' "$clean"
 }
 
 check_message_text() {
@@ -105,7 +128,7 @@ check_message_file() {
     printf 'Commit attribution check failed: message file does not exist.\n' >&2
     return 2
   fi
-  check_message_text "$message_file" "$(<"$message_file")"
+  check_message_text "$message_file" "$(strip_git_scissors "$message_file")"
 }
 
 check_identity() {
@@ -204,8 +227,9 @@ print_policy() {
   printf '\n[2b] 身份层补充（全大写 AI）:\n%s\n' "$UPPERCASE_AI_IDENTITY_REGEX"
   printf '\n[3] message 披露短语 A（AI + 动作词）:\n%s\n' "$MESSAGE_AI_ACTION_REGEX"
   printf '\n[4] message 披露短语 B（动作 + by + 身份）:\n%s\n' "$MESSAGE_GENERATED_BY_REGEX"
-  printf '\n[5] message 披露短语 C（中文披露）:\n%s\n' "$MESSAGE_ZH_REGEX"
-  printf '\n说明: 层 3-5 只匹配披露短语，不匹配裸词 ai / agent / assistant / bot。\n'
+  printf '\n[5] message 披露短语 C（动作 + with/using + 工具）:\n%s\n' "$MESSAGE_GENERATED_WITH_REGEX"
+  printf '\n[6] message 披露短语 D（中文披露）:\n%s\n' "$MESSAGE_ZH_REGEX"
+  printf '\n说明: 层 3-6 只匹配披露短语，不匹配裸词 ai / agent / assistant / bot。\n'
   printf '      「修复 AI 模块的空指针」「增加 ai 摘要」属于产品功能描述，不拦截。\n'
 }
 
@@ -253,6 +277,7 @@ main() {
     --print-policy)
       [[ "$#" -eq 1 ]] || { usage; return 2; }
       print_policy
+      return 0
       ;;
     *)
       usage

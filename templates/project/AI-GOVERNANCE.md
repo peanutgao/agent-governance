@@ -35,16 +35,7 @@ What defines correctness for this task?
 
 已明确批准的新决定与旧 Spec 冲突时，按需求变更流程同步 Spec 后再实现。
 
-以下内容不能自动定义业务正确性：
-
-- 现有代码；
-- 现有测试；
-- README；
-- 示例代码；
-- 历史计划；
-- Git 历史；
-- AI 推断；
-- 行业惯例。
+以下内容不能自动定义业务正确性：现有代码、现有测试、README、示例代码、历史计划、Git 历史、AI 推断、行业惯例。
 
 若需决定业务行为而找不到权威来源，将 Truth Source 标记为 undefined 并进入需求澄清。机械改动、样式和其他非业务变更按明确指令与项目规则验收。
 
@@ -52,35 +43,15 @@ What defines correctness for this task?
 
 ## 3. 开工上下文
 
-按任务需要读取：
+按任务需要读取：1) 本仓库 AGENTS.md；2) 项目架构和安全规则；3) 相关模块 Spec；4) API / Event / Data Contract；5) 相关实现；6) 相关测试；7) 仅需历史原因时读 ADR 或归档计划。
 
-1. 本仓库 AGENTS.md；
-2. 项目架构和安全规则；
-3. 相关模块 Spec；
-4. API / Event / Data Contract；
-5. 相关实现；
-6. 相关测试；
-7. 仅在需要历史原因时读取 ADR 或归档计划。
-
-不要为了节省时间跳过直接相关的 Spec、Contract、测试或项目规则。不要一次加载无关的整个仓库。
+不要为了节省时间跳过直接相关的 Spec、Contract、测试或项目规则；不要一次加载无关的整个仓库。
 
 ## 4. 任务分类
 
-每个任务先分类，不得默认所有问题都是代码 Bug：
+每个任务先分类（写入任务或 PR 记录），不得默认所有问题都是代码 Bug；实现中分类变化须停止并重新规划：
 
-~~~text
-A. New Feature
-B. Requirement Change
-C. Implementation Bug
-D. Missing Requirement
-E. Incorrect Requirement
-F. Architecture Limitation
-G. Data Issue
-H. External Dependency Issue
-I. Non-behavioral Change
-~~~
-
-分类必须写入任务或 PR 记录。实现过程中如果分类发生变化，必须停止当前路径并重新规划。
+`A. New Feature` / `B. Requirement Change` / `C. Implementation Bug` / `D. Missing Requirement` / `E. Incorrect Requirement` / `F. Architecture Limitation` / `G. Data Issue` / `H. External Dependency Issue` / `I. Non-behavioral Change`
 
 ### 变更分级
 
@@ -98,36 +69,9 @@ I. Non-behavioral Change
 
 ## 5. 需求变更门禁
 
-改变已批准的产品目标或对外契约才进入 Requirement Change。修复实现以恢复已批准行为仍是 Implementation Bug，纯文案和视觉调整按实际影响分级。以下领域出现已批准目标变化时适用本流程：
+改变已批准的产品目标或对外契约才进入 Requirement Change。修复实现以恢复已批准行为仍是 Implementation Bug，纯文案和视觉调整按实际影响分级。以下领域出现已批准目标变化时适用本流程：用户可见行为、API、Event、状态及状态转换、权限、金额、业务计算、数据保留、默认策略、通知、第三方集成、兼容性行为、文件格式、持久化模型。
 
-- 用户可见行为；
-- API；
-- Event；
-- 状态；
-- 权限；
-- 金额；
-- 业务计算；
-- 数据保留；
-- 默认策略；
-- 通知；
-- 状态转换；
-- 第三方集成；
-- 兼容性行为；
-- 文件格式；
-- 持久化模型。
-
-处理顺序固定为：
-
-~~~text
-Change Proposal
-→ 逐条澄清
-→ 明确决策
-→ 命中前置复核条件时先通过独立方案复核
-→ 更新权威 Spec
-→ 更新 Design / Contract
-→ 重新规划
-→ 实现
-~~~
+处理顺序固定为：`Change Proposal → 逐条澄清 → 明确决策 → 命中前置复核条件时先通过独立方案复核 → 更新权威 Spec → 更新 Design / Contract → 重新规划 → 实现`。
 
 未确认的 Change Proposal 不是正式业务真相，不能作为实现依据。
 
@@ -161,16 +105,7 @@ Change Proposal
 
 ## 7. Bug 和架构问题
 
-Implementation Bug 的处理方式：
-
-~~~text
-复现 Expected / Actual
-→ 对照 Approved Spec
-→ 定位根因和影响面
-→ 命中 §6 或项目的前置复核条件时先通过独立复核
-→ 最小修复
-→ 回归验证
-~~~
+Implementation Bug 的处理顺序：`复现 Expected / Actual → 对照 Approved Spec → 定位根因和影响面 → 命中 §6 或项目前置复核条件时先通过独立复核 → 最小修复 → 回归验证`。
 
 禁止通过 catch 吞错、条件绕过、延迟、重试、复制另一套逻辑或兜底假数据掩盖根因。
 
@@ -202,32 +137,9 @@ Implementation Bug 的处理方式：
 
 ## 9. Impact Analysis
 
-行为变更实施前至少检查：
+行为变更实施前至少检查：Canonical Spec、Dependent Specs、Domain modules、State machines、Permissions、API/Event contracts、Data model / migrations、Backend、Frontend、Tests、Logging / monitoring、Compatibility / migration、Documentation。
 
-- Canonical Spec；
-- Dependent Specs；
-- Domain modules；
-- State machines；
-- Permissions；
-- API/Event contracts；
-- Data model / migrations；
-- Backend；
-- Frontend；
-- Tests；
-- Logging / monitoring；
-- Compatibility / migration；
-- Documentation。
-
-输出：
-
-~~~text
-Source of truth:
-Affected:
-Possibly affected:
-Not affected:
-~~~
-
-跨项目变更不得只在一个消费端仓库内完成。拥有共享 Contract 的仓库必须列出所有消费端，并链接对应同步变更。
+输出 `Source of truth` / `Affected` / `Possibly affected` / `Not affected`。跨项目变更不得只在一个消费端仓库内完成；拥有共享 Contract 的仓库必须列出所有消费端并链接对应同步变更。
 
 ## 10. 先更新知识再实现
 
@@ -241,36 +153,9 @@ Not affected:
 
 ## 11. 文档同步
 
-修改以下任一内容时，必须检查并按职责同步：
+修改以下任一内容时，必须检查并按职责同步：API 路由、进程间或跨服务通信通道、Service 接口、Event、文件格式、数据 Schema、目录或分层、端口、环境变量、启动命令、业务规则、数据模型、权限或关键计量规则、部署、外部依赖与资源获取、发布流程、旧入口或旧术语。
 
-- API 路由；
-- IPC 通道；
-- Service 接口；
-- Event；
-- 文件格式；
-- 数据 Schema；
-- 目录或分层；
-- 端口；
-- 环境变量；
-- 启动命令；
-- 业务规则；
-- 数据模型；
-- 计费或权限；
-- 部署；
-- 模型下载；
-- 发布流程；
-- 旧入口或旧术语。
-
-文档职责：
-
-- AGENTS.md：工程规则、架构红线、命令和门禁；
-- specs/：当前业务行为和契约；
-- traceability：Requirement ID 到实现和测试的精确映射；
-- domain map：架构事实和依赖；
-- README / guides：入口、使用、部署和排障说明；
-- plans：仍在实施的过程文档；
-- ADR：历史决策和被拒方案；
-- CONTEXT：领域术语。
+文档职责：AGENTS.md（规则/红线/命令/门禁）；docs/specs/（或 specs/，业务行为与契约）；docs/todos/（或 plans/，计划与 Todo）；docs/adr/（长期决策）；docs/architecture/（架构与选型映射）；README/guides（入口/部署）；CONTEXT（术语）。
 
 README、计划、审查报告、对话摘要不能覆盖权威 Spec。
 
@@ -285,43 +170,28 @@ README、计划、审查报告、对话摘要不能覆盖权威 Spec。
 - 没有空函数、桩实现、未接通路径或 TODO 未实现占位；
 - 没有明知项目已有实现仍重写一套；
 - 新代码遵守本项目的分层和依赖方向；
-- 有加载态时提交类入口不能重复触发；
+- 提交或写操作入口具备幂等或防重机制，避免重复触发；
 - 没有为极低概率并发路径添加无证据的锁、定时器或状态机。
 
 ## 13. 依赖准入
 
 引入任何第三方库前必须**同时**满足：
 
-1. GitHub stars > 1k 或 npm 周下载 > 50k；
-2. 最近 12 个月有 release；
-3. TypeScript 类型完整；
-4. 没有可被 100 行以内手写替代的更轻量方案。
+1. 社区成熟且维护活跃（近 12 个月有稳定发布，生态采用度可核验）；
+2. 接口与类型契约清晰（适配当前技术栈的类型安全与构建约束）；
+3. 许可证与安全风险已核对，且没有可被约 100 行以内手写替代的更轻量方案。
 
-候选库先列出多方案对比（成熟度、维护状态、体积、与现有依赖的兼容），经用户确认后再引入。禁止引入自包装 HTTP client、自写事件总线、自写 DI 容器等与「优先用成熟开源库」相悖的轮子；项目另有更严依赖政策的，以项目 AGENTS.md 为准。
+候选库先列出多方案对比（成熟度、维护状态、体积、与现有依赖的兼容），经用户确认后再引入。优先复用成熟开源库而非自造重型轮子；项目另有更严依赖政策的，以项目 AGENTS.md 为准。
 
 ## 14. 数据、安全和不可逆操作
 
-以下内容不得出现在对话、日志、Issue、PR 或提示词中：
+以下内容不得出现在对话、日志、Issue、PR 或提示词中：生产密钥、API key、token、证书、私钥、数据库口令；客户手机号、邮箱、地址、身份信息；真实订单、支付流水和对账明细。
 
-- 生产密钥、API key、token、证书、私钥、数据库口令；
-- 客户手机号、邮箱、地址、身份信息；
-- 真实订单、支付流水和对账明细。
-
-生产环境：
-
-- 可在授权范围内读取非敏感日志、容器状态和配置；
-- 不得执行 UPDATE、DELETE、迁移、部署、重启或生产配置写入；
-- 这些操作只输出方案和命令，交由人执行。
+生产环境仅可在授权范围内读取非敏感日志、容器状态和配置；不得执行 UPDATE、DELETE、迁移、部署、重启或生产配置写入，只输出方案和命令交由人执行。
 
 访问或操作任何数据库或钥匙串前，必须取得用户对本次具体操作的明确授权。读取、查询、刷新、写入、删除、迁移、备份、恢复、临时或测试实例，以及会间接访问它们的命令均适用；替换可能影响既有钥匙串授权的组件也须单独授权。通用的实现、修复或验证授权不覆盖这些操作。
 
-未经明确授权不得执行：
-
-- force push；
-- 删除远端分支或 tag；
-- 重写已推送历史；
-- 清理或重置用户工作树；
-- 覆盖无法恢复的数据。
+未经明确授权不得执行：force push、删除远端分支或 tag、重写已推送历史、清理或重置用户工作树、覆盖无法恢复的数据。
 
 ## 15. 禁改区与治理边界
 
@@ -336,89 +206,35 @@ README、计划、审查报告、对话摘要不能覆盖权威 Spec。
 - 拿不准某路径是否属禁改区时，先问，不要自行判定为普通区。
 - 放宽禁改区门禁的改动（CODEOWNERS、CI、发布脚本、钩子）同属禁改区，不得由 AI 自行合入。
 
-**收窄：新建 spec 不要求 trailer。** 在 `specs/` / `**/spec/` 下新建此前不存在的 spec 文件，且不改动任何已有 `approved` / `active` 条目时，只需 owner 在当次会话中确认内容即可落盘；为该新 spec 所做的索引与 traceability 登记同属此列。原本没有业务真相存在，也就不存在被静默改写的风险。**修改**既有 spec（改写 Business Rules / Acceptance Criteria、变更状态机、标记 deprecated、或新 spec 覆盖既有规则）不适用本收窄。
+**收窄：新建 spec 不要求 trailer。** 在 `docs/specs/` / `specs/` / `**/spec/` 下新建此前不存在的 spec 文件，且不改动任何已有 `approved` / `active` 条目时，只需 owner 在当次会话中确认内容即可落盘；为该新 spec 所做的索引与 traceability 登记同属此列。原本没有业务真相存在，也就不存在被静默改写的风险。**修改**既有 spec（改写 Business Rules / Acceptance Criteria、变更状态机、标记 deprecated、或新 spec 覆盖既有规则）不适用本收窄。
 
 ## 16. Git 提交作者归属
 
-项目禁止 AI、模型、Agent 或 Bot 作为 Git commit 的 author、committer 或 co-author 出现。
-
-新提交禁止出现以下 trailer 或等价合作作者声明：
-
-~~~text
-Co-Authored-By:
-Co-authored-by:
-Co-Author:
-Coauthor:
-~~~
-
-身份与提交消息的可执行拦截清单以项目接入的 `check-commit-attribution.sh --print-policy` 为准。
+项目禁止 AI、模型、Agent 或 Bot 作为 Git commit 的 author、committer 或 co-author 出现。新提交禁止出现 `Co-Authored-By:` / `Co-authored-by:` / `Co-Author:` / `Coauthor:` 或等价合作作者声明；身份与提交消息的可执行拦截清单以项目接入的 `check-commit-attribution.sh --print-policy` 为准。
 
 - 未经用户明确要求，AI 不得执行 `git commit`、`git commit --amend` 或自动提交任何代码、规则或文档；修改完成、验证通过或用户说“完成”都不等于获得提交授权。
 - Git commit 使用人类开发者的 author 和 committer 身份。
 - 项目交付物和协作记录不得披露 AI 参与、模型、供应商、Agent、Bot、生成归属、提示词或类似自动化身份信息；范围包括 commit metadata/message、代码注释、文档、Spec、ADR、PR、Issue、审查记录、任务总结和日志。
 - 历史提交不重写；只阻止新的 AI 信息披露，不把“未披露”误写成“未使用”。
-
-~~~text
-Governance-Exception: ...
-~~~
-
-是 owner 审批记录，不是作者归属声明，可以继续使用。
-
-检查新提交时只检查当前 PR 或 push 新增的 commit，不因历史旧记录失败。
+- `Governance-Exception: ...` 是 owner 审批记录，不是作者归属声明，可以继续使用；它不豁免归属禁令。检查新提交时只检查当前 PR 或 push 新增的 commit，不因历史旧记录失败。
 
 ## 17. 测试、审查和收尾
 
-完成前必须：
+完成前必须：运行与改动相关的真实验证命令（不用“应该通过”替代真实输出）；自审完整 diff 并清理调试代码与临时日志；检查错误处理、安全边界与相关文档；搜索并处理旧参数、旧状态、旧 API/Event 和旧术语残留；对高风险、跨模块、权限、安全、数据和非显然 Bug 取得独立 reviewer 审查。
 
-- 运行与改动相关的真实验证命令；
-- 不使用“应该通过”“已验证”等替代真实输出；
-- 自审完整 diff；
-- 清理调试代码、临时日志和无效注释；
-- 检查错误处理、安全边界和相关文档；
-- 搜索旧参数、旧状态、旧 API、旧 Event 和旧术语；
-- 处理或明确记录每个残留引用；
-- 对高风险、跨模块、权限、安全、数据和非显然 Bug 取得独立 reviewer 审查。
-
-完整流程结束时输出以下信息，简单 Bug 按 §20 简报，L0 只说明改动和适用验证。
-
-~~~text
-Classification:
-Truth Source:
-Changes:
-Spec / Design / Contract Updates:
-Tests:
-Verification:
-Remaining Risks / Follow-ups:
-~~~
-
-并逐项 Reconciliation：
-
-~~~text
-Spec:
-Design:
-Contract:
-Code:
-Tests:
-~~~
-
-任一项存在未解决问题，不得宣称任务完成。
+完整流程结束时输出 `Classification / Truth Source / Changes / Spec / Design / Contract Updates / Tests / Verification / Remaining Risks / Follow-ups`，并逐项 Reconciliation（`Spec / Design / Contract / Code / Tests`），任一项存在未解决问题不得宣称完成；简单 Bug 按 §20 简报，L0 只说明改动和适用验证。
 
 ## 18. Spec 与 ADR 目录约定
 
-- 通用项目默认使用 `specs/README.md` 作为业务 Spec 索引，使用 `specs/<Module>/` 按模块存放当前业务 Spec 文件。
-- 通用项目默认使用 `docs/adr/README.md` 作为 ADR 索引，使用 `docs/adr/<Module>/` 按模块或领域存放 ADR 文件。
-- 索引只负责导航、状态和简短范围说明；正文放对应模块目录，不在根目录散放业务文件。
-- Spec 记录已确认的当前业务行为、边界、失败行为和验收条件；ADR 记录需要长期保留的架构或合同决策。Plan、brainstorm、审计记录和历史提案不能替代它们。
-- 新增或修改业务行为时更新对应模块 Spec；新增或修改架构/合同决策时更新对应模块 ADR 和索引。恢复已有 Spec 行为的简单 Bug 不新建 Spec；普通实现不默认新建 ADR。
-- 文档是否提交到 Git 是项目级发布策略；项目可以声明 Specs/ADR/Plan/brainstorm 仅在本机维护，并用 `.gitignore` 防止新文档进入仓库。
-- 项目已采用等价的其他目录时，遵循项目入口并保持“索引 + 模块目录 + 模块文件”的组织方式，不复制第二套文档真源。
+- 默认使用 `docs/specs/README.md` + `docs/specs/<Module>/` 存当前业务 Spec、`docs/todos/` 存计划与 Todo、`docs/adr/README.md` + `docs/adr/<Module>/` 存长期 ADR；索引仅作导航，正文放模块目录。既有项目用 `specs/` + `plans/` 等价目录时沿用，不建第二套真源。
+- Spec 记已确认业务行为、边界、失败行为与验收条件；ADR 记长期决策。Todo/Plan、brainstorm、审计和提案不能替代它们。
+- 业务行为变化同步对应 Spec；架构/合同决策变化同步 ADR 与索引；恢复既有 Spec 的简单 Bug 不建 Spec，普通实现不默认建 ADR。
+- 文档是否入 Git 属项目发布策略（可声明仅本机维护并用 `.gitignore` 忽略），不改变目录组织与正确性要求。
 
 ## 19. 本机与运行环境
 
-- 不自行启动、重启或停止长期运行的服务（dev server、后端、数据库、Redis、nginx、消息队列等）。需要服务在跑才能验证时，把命令交给用户执行。
-- 例外只限一次性验证用的临时进程：先说明、端口不冲突、用完立即清理。
-- 不把开发机当生产环境：不安装开机自启或常驻代理（LaunchAgent、systemd unit、常驻 crontab），不改系统级配置。
-- 造测试数据前先写清清理方案；无法清理的数据不写入开发库或共享库，也不留在仓库里。
+- 不自行启停长期运行的服务（dev server、后端、数据库、Redis、nginx、消息队列等），需要服务在跑时把命令交给用户执行；例外仅限一次性验证用的临时进程（先说明、端口不冲突、用完立即清理）。
+- 不把开发机当生产环境：不安装开机自启或常驻代理（LaunchAgent、systemd unit、常驻 crontab），不改系统级配置；造测试数据前先写清清理方案，无法清理的数据不写入开发/共享库也不留在仓库里。
 
 
 ## 20. Bug 快速路径
@@ -448,13 +264,10 @@ Tests:
 - 简单局部 Bug 做受影响调用链、状态 / 数据流、相邻条件和至少一个最可能反例的局部复核；非显然、跨模块或高风险改动扩大复核范围。
 - 复核发现根因、正确性或范围仍不成立时，不得宣称完成；回到需求澄清、诊断、设计或实现阶段。
 
-## 23. 实现约束
+## 23. 实现约束与证据纪律
 
-- 只实现已经明确的目标，保持最小且连贯的改动。
-- 写代码前先搜索项目已有的组件、Service、工具、Schema 和相似实现。新增、替换或自研可复用能力时，在现有任务记录写明候选路径、能覆盖的要求、关键缺口和采用理由。
-- 不要为了让测试变绿而改变需求或 Spec。
-- 不做未被要求的重构、依赖升级、格式化或清理。
-- 不保留空壳实现、调试输出或“以后再做”的未接通路径。
-- 发现与当前目标无关的问题，记录后不要顺手扩大范围；安全、权限和数据正确性问题除外，应明确报告。
+- 只实现已明确目标，保持最小且连贯的改动；写代码前先搜索项目已有组件、Service 与工具，新增或自研可复用能力时写明候选路径、缺口与理由。
+- 锁定主目标：执行中遇到的构建/测试/环境异常先归因来源，仅修复本次引入或阻塞主目标的最小问题，不顺手扩展范围；安全、权限与数据正确性红线除外，须明确报告。
+- 证据纪律：依赖版本、配置、API 或源码行为的结论须先查证再下断语，禁止脑补不存在的对象，措辞与已验证范围匹配；不要为让测试变绿而改 Spec，不留空壳实现、调试输出或未接通路径。
 
 <!-- END SHARED-AI-GOVERNANCE: __BASELINE_VERSION__ -->

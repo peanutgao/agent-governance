@@ -17,10 +17,10 @@
 
 ## 在本仓干活时
 
-1. 改规则 → `global/AGENTS.md`；改流程 → `global/ai-change-implementation-prompt.md`。
+1. 改全局约束 → `global/AGENTS.md`；改详细流程 → `skills/local/ai-change-flow/SKILL.md` 及 `skills/local/ai-change-flow/references/full-flow.md`。
 2. 改完 `bump VERSION`，再跑 `bash scripts/check-version-bump.sh`。
 3. 验证：`bash tests/run-all.sh`；分发状态：`bash scripts/distribute.sh --check`。
 4. 不要直接编辑本机副本（`~/.codex/AGENTS.md` 等），它们会被下次分发覆盖。
 
-详细流程（L2 变更、非显然 Bug、独立方案复核）见
-`global/ai-change-implementation-prompt.md`，按需读取。
+详细流程（L2 变更、非显然 Bug、独立方案复核）见 `skills/local/ai-change-flow/SKILL.md`
+及其 `skills/local/ai-change-flow/references/full-flow.md`，按需读取。

@@ -2,18 +2,16 @@
 # sync-project-governance.sh — 从模板生成项目仓库的 AI-GOVERNANCE.md 快照
 #
 # 用法:
-#   bash scripts/sync-project-governance.sh [--check] [--root <monorepo-root>]
+#   bash scripts/sync-project-governance.sh --root <workspace-root> [--repos <a,b>] [--check]
 #
-# 默认目标根目录:
-#   $HOME/Documents/work/personal-project/hengqin
-#
-# 目标仓库:
-#   hengqin-backend / hengqin-desktop / hengqin-admin
+# 环境变量:
+#   PROJECT_GOVERNANCE_ROOT   等价于 --root
+#   PROJECT_GOVERNANCE_REPOS  等价于 --repos（逗号分隔；默认自动发现候选子目录）
 #
 # 行为:
 #   1. 从 templates/project/AI-GOVERNANCE.md 渲染 baseline-version
-#   2. 按现有校验方案计算 baseline-content-sha256（header 的 hash 字段先还原为占位符）
-#   3. 写入三仓 AI-GOVERNANCE.md；--check 只比较，不写入，不一致时退出 1
+#   2. 按校验方案计算 baseline-content-sha256（header 的 hash 字段先还原为占位符）
+#   3. 写入各目标仓 AI-GOVERNANCE.md；--check 只比较，不写入，不一致时退出 1
 #
 # 该脚本只改由治理仓生成的快照，不改各仓 AGENTS.md、specs 或业务代码。
 set -euo pipefail
@@ -23,9 +21,9 @@ _self="${BASH_SOURCE[0]:-}"
 REPO_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
 TEMPLATE="$REPO_DIR/templates/project/AI-GOVERNANCE.md"
 VERSION_FILE="$REPO_DIR/VERSION"
-TARGET_ROOT="${PROJECT_GOVERNANCE_ROOT:-$HOME/Documents/work/personal-project/hengqin}"
-# 目标仓库默认由 --root 目录下「含 .git 且已有快照或有 AGENTS.md」的子目录自动发现。
-# 可用 --repos 或 PROJECT_GOVERNANCE_REPOS（逗号分隔）显式指定，避免把项目清单写进治理仓。
+TARGET_ROOT="${PROJECT_GOVERNANCE_ROOT:-}"
+# 目标仓库默认由 --root 目录下「含 .git、AI-GOVERNANCE.md、AGENTS.md 或 CLAUDE.md」的子目录自动发现。
+# 可用 --repos 或 PROJECT_GOVERNANCE_REPOS（逗号分隔）显式指定，避免把具体项目写进治理仓。
 REPOS=()
 REPOS_EXPLICIT=0
 
@@ -39,15 +37,29 @@ mode="write"
 usage() {
   cat >&2 <<'USAGE'
 用法:
-  sync-project-governance.sh                  # 生成/更新目标仓快照
-  sync-project-governance.sh --check          # 只校验，不写入
-  sync-project-governance.sh --root <path>    # 指定 monorepo 根目录
-  sync-project-governance.sh --repos <a,b>    # 显式指定仓库名（默认自动发现）
+  sync-project-governance.sh --root <path>                  # 生成/更新目标仓快照
+  sync-project-governance.sh --check --root <path>          # 只校验，不写入
+  sync-project-governance.sh --root <path> --repos <a,b>    # 显式指定仓库名（默认自动发现）
 
 环境变量:
   PROJECT_GOVERNANCE_ROOT                     # 等价于 --root
   PROJECT_GOVERNANCE_REPOS                    # 等价于 --repos
 USAGE
+}
+
+sha256_stdin() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | cut -d' ' -f1
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
+  elif command -v python >/dev/null 2>&1; then
+    python -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
+  else
+    printf '错误: 缺少 SHA-256 计算工具（需要 sha256sum、shasum 或 python）。\n' >&2
+    return 1
+  fi
 }
 
 while [[ "$#" -gt 0 ]]; do
@@ -78,6 +90,11 @@ while [[ "$#" -gt 0 ]]; do
   esac
 done
 
+if [[ -z "$TARGET_ROOT" ]]; then
+  printf '错误: 必须通过 --root 或 PROJECT_GOVERNANCE_ROOT 指定目标项目根目录。\n' >&2
+  usage
+  exit 2
+fi
 [[ -f "$TEMPLATE" ]] || { printf '错误: 缺少模板 %s\n' "$TEMPLATE" >&2; exit 1; }
 [[ -f "$VERSION_FILE" ]] || { printf '错误: 缺少 VERSION %s\n' "$VERSION_FILE" >&2; exit 1; }
 [[ -d "$TARGET_ROOT" ]] || { printf '错误: 目标根目录不存在 %s\n' "$TARGET_ROOT" >&2; exit 1; }
@@ -91,10 +108,12 @@ if [[ "$REPOS_EXPLICIT" == 0 ]]; then
     IFS=',' read -r -a REPOS <<<"$PROJECT_GOVERNANCE_REPOS"
   else
     while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] || continue
       REPOS+=("$candidate")
     done < <(
       find "$TARGET_ROOT" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null |
         while IFS= read -r dir; do
+          [[ "$dir" -ef "$REPO_DIR" ]] && continue
           if [[ -e "$dir/.git" || -f "$dir/AI-GOVERNANCE.md" ||
             -f "$dir/AGENTS.md" || -f "$dir/CLAUDE.md" ]]; then
             basename "$dir"
@@ -104,22 +123,25 @@ if [[ "$REPOS_EXPLICIT" == 0 ]]; then
   fi
 fi
 
-# 去掉空项，拒绝带路径分隔符的名字，避免 --repos 变成越界写入入口。
+# 仅裁剪首尾空白（保留目录名内部空格），拒绝带路径分隔符的名字，避免 --repos 越界写入。
 normalized=()
-for repo in "${REPOS[@]}"; do
-  repo="${repo//[[:space:]]/}"
-  [[ -n "$repo" ]] || continue
-  if [[ "$repo" == */* || "$repo" == "." || "$repo" == ".." ]]; then
-    printf '错误: 仓库名不能包含路径分隔符: %s\n' "$repo" >&2
-    exit 1
-  fi
-  normalized+=("$repo")
-done
-REPOS=("${normalized[@]}")
-if [[ "${#REPOS[@]}" -eq 0 ]]; then
+if (( ${#REPOS[@]} > 0 )); then
+  for repo in "${REPOS[@]}"; do
+    repo="${repo#"${repo%%[![:space:]]*}"}"
+    repo="${repo%"${repo##*[![:space:]]}"}"
+    [[ -n "$repo" ]] || continue
+    if [[ "$repo" == */* || "$repo" == "." || "$repo" == ".." ]]; then
+      printf '错误: 仓库名不能包含路径分隔符: %s\n' "$repo" >&2
+      exit 1
+    fi
+    normalized+=("$repo")
+  done
+fi
+if (( ${#normalized[@]} == 0 )); then
   printf '错误: 在 %s 下没有发现候选仓库（需含 .git、AI-GOVERNANCE.md、AGENTS.md 或 CLAUDE.md）；用 --repos 显式指定。\n' "$TARGET_ROOT" >&2
   exit 1
 fi
+REPOS=("${normalized[@]}")
 
 real_repositories=0
 
@@ -131,11 +153,11 @@ snapshot_is_generated() {
   local file="$1"
   local stated actual
   [[ -f "$file" ]] || return 1
-  stated="$(awk '/^> baseline-content-sha256: /{print $3; exit}' "$file")"
+  stated="$(awk '/^> baseline-content-sha256: /{print $3; exit}' "$file" | tr -d '\r')"
   [[ -n "$stated" ]] || return 1
   actual="$(
     sed "s/^> baseline-content-sha256: .*/> baseline-content-sha256: $PLACEHOLDER/" "$file" |
-      shasum -a 256 | cut -d' ' -f1
+      sha256_stdin
   )"
   [[ "$stated" == "$actual" ]]
 }
@@ -143,6 +165,10 @@ snapshot_is_generated() {
 for repo in "${REPOS[@]}"; do
   repo_path="$TARGET_ROOT/$repo"
   dest="$repo_path/AI-GOVERNANCE.md"
+  if [[ "$repo_path" -ef "$REPO_DIR" ]]; then
+    printf '错误: 禁止把项目治理快照写入治理仓自身: %s\n' "$repo_path" >&2
+    exit 1
+  fi
   if [[ -L "$repo_path" || ! -d "$repo_path" || -L "$dest" || ( -e "$dest" && ! -f "$dest" ) ]]; then
     printf '错误: 目标仓库或快照类型不安全: %s\n' "$dest" >&2
     exit 1
@@ -170,32 +196,47 @@ done
 if [[ "$real_repositories" == 1 ]]; then
   release_commit="$(git -C "$REPO_DIR" rev-parse HEAD)"
   bash "$REPO_DIR/scripts/check-version-bump.sh"
+  if git -C "$REPO_DIR" remote get-url origin >/dev/null 2>&1; then
+    if ! git -C "$REPO_DIR" fetch --quiet origin 2>/dev/null; then
+      printf '错误: 无法 fetch origin，拒绝同步可能过时的治理基线。\n' >&2
+      exit 1
+    fi
+  fi
   release_ref="$(git -C "$REPO_DIR" symbolic-ref --quiet refs/remotes/origin/HEAD || true)"
   release_ref="${release_ref:-refs/remotes/origin/main}"
   if ! git -C "$REPO_DIR" merge-base --is-ancestor "$release_commit" "$release_ref" 2>/dev/null; then
     printf '错误: 当前治理提交尚未进入已获取的 origin 默认分支，拒绝同步项目。\n' >&2
     exit 1
   fi
+  behind="$(git -C "$REPO_DIR" rev-list --count "$release_commit..$release_ref")"
+  if (( behind > 0 )); then
+    printf '错误: 本地治理仓落后 %s %d 个提交，会同步旧版快照。先 git pull。\n' "$release_ref" "$behind" >&2
+    exit 1
+  fi
 fi
 
-if [[ "$real_repositories" == 1 ]]; then
-  version="$(git -C "$REPO_DIR" show "$release_commit:VERSION")"
-else
-  version="$(cat "$VERSION_FILE")"
-fi
-if [[ "$(awk 'END { print NR }' "$VERSION_FILE")" != 1 ||
-  ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-  printf '错误: VERSION 必须只包含一行严格的 SemVer。\n' >&2
-  exit 1
-fi
-
-tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-governance-sync.XXXXXX")"
+tmp_base="${TMPDIR:-/tmp}"
+tmp_base="${tmp_base%/}"
+tmp_dir="$(mktemp -d "$tmp_base/agent-governance-sync.XXXXXX")"
 staged_file=
 cleanup() {
   [[ -z "$staged_file" ]] || rm -f "$staged_file"
   rm -rf "$tmp_dir"
 }
 trap cleanup EXIT
+
+if [[ "$real_repositories" == 1 ]]; then
+  git -C "$REPO_DIR" show "$release_commit:VERSION" >"$tmp_dir/VERSION"
+  version_source="$tmp_dir/VERSION"
+else
+  version_source="$VERSION_FILE"
+fi
+version="$(sed -n '1p' "$version_source")"
+if [[ "$(awk 'END { print NR }' "$version_source")" != 1 ||
+  ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+  printf '错误: VERSION 必须只包含一行严格的 SemVer。\n' >&2
+  exit 1
+fi
 
 # 先把版本号写进 header 与边界标记；hash 字段暂时保留占位符。
 if [[ "$real_repositories" == 1 ]]; then
@@ -207,7 +248,7 @@ sed "s/__BASELINE_VERSION__/$version/g" "$TEMPLATE" >"$tmp_dir/rendered.md"
 # 计算哈希时，header 的 hash 字段必须还原为固定占位符（与 check 脚本同一方案）。
 sed "s/^> baseline-content-sha256: .*/> baseline-content-sha256: $PLACEHOLDER/" \
   "$tmp_dir/rendered.md" >"$tmp_dir/hash-input.md"
-hash="$(shasum -a 256 "$tmp_dir/hash-input.md" | cut -d' ' -f1)"
+hash="$(sha256_stdin <"$tmp_dir/hash-input.md")"
 
 # 只替换 header 的 hash 字段；正文里解释哈希方案的那一行保持占位符原文。
 awk -v hash="$hash" '

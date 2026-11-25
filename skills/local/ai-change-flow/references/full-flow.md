@@ -266,10 +266,10 @@ Decision
 
 ### Phase C — Upfront planning for new projects and major refactors
 
-从零建立新项目、或跨模块重构/实质改写架构时，在理解现状并完成需求澄清之后进入本阶段；普通 L1/L2 与简单 Bug 跳过。
+从零建立新项目时优先走 `new-project-bootstrap` Skill（6 阶段建项门禁）；跨模块重构/实质改写架构时，在理解现状并完成需求澄清之后进入本阶段；普通 L1/L2 与简单 Bug 跳过。
 
-1. 完成需求澄清并落实 Spec：优先用 `grilling`，交互格式与事实核验按 §3.1 执行；需求经用户确认后写入 `specs/<Module>/` 并同步 `specs/README.md` 索引，未确认内容不进入 Spec。
-2. 完成设计与任务拆解：优先用 `superpowers` 的 brainstorming → design → planning 流程，产出可执行、可验收的 todo，落到项目已有计划文件；没有计划文件时在项目既有文档结构下新建。
+1. 完成需求澄清并落实 Spec：优先用 `grilling`，交互格式与事实核验按 §3.1 执行；需求经用户确认后写入 `docs/specs/<Module>/` 并同步 `docs/specs/README.md` 索引（既有项目沿用 `specs/<Module>/`），未确认内容不进入 Spec。
+2. 完成设计与任务拆解：优先用 `superpowers` 的 brainstorming → design → planning 流程，产出可执行、可验收的 todo，落到 `docs/todos/`（既有项目沿用 `plans/` 或既有计划目录）。
 3. 当前环境没有对应 Skill 时执行等价的最小流程，不伪造 Skill 调用；Skill 是流程工具，不作为固定前置步骤。
 4. 本阶段不替代 §12.1 的独立方案复核；两者按各自触发条件独立判断。
 
@@ -684,28 +684,31 @@ API / Event / Data Contract
 
 ## 13.1 SPEC AND ADR ORGANIZATION
 
-通用项目默认按以下结构组织当前业务 Spec 和长期架构/合同 ADR：
+新建通用项目默认将文档收口在 `docs/` 下组织当前业务 Spec、实施 Todo 与长期架构/合同 ADR：
 
 ```text
-specs/
-├── README.md
-└── <Module>/
-    └── <spec>.md
-
-docs/adr/
-├── README.md
-└── <Module>/
-    └── <adr>.md
+docs/
+├── specs/
+│   ├── README.md
+│   └── <Module>/
+│       └── <spec>.md
+├── todos/
+│   ├── README.md
+│   └── <task>.md
+└── adr/
+    ├── README.md
+    └── <Module>/
+        └── <adr>.md
 ```
 
 目录规则：
 
-- `specs/README.md` 和 `docs/adr/README.md` 只做索引、状态和简短范围说明；具体正文放在对应模块或领域文件夹内。
+- `docs/specs/README.md` 和 `docs/adr/README.md` 只做索引、状态和简短范围说明；具体正文放在对应模块或领域文件夹内。
 - Spec 是已确认的当前业务行为来源，记录目标行为、边界、失败行为和验收条件；ADR 是长期架构或合同决策的历史理由和约束，不承载易变业务取值。
-- Plan、brainstorm、Change Proposal、审计记录和历史提案不能替代当前 Spec 或 Accepted ADR。
-- 新增或修改业务行为时，更新对应 `specs/<Module>/*.md` 并同步索引；恢复已有 Spec 行为的简单 Bug 不新建或修改 Spec。
+- Todo/Plan、brainstorm、Change Proposal、审计记录和历史提案不能替代当前 Spec 或 Accepted ADR。
+- 新增或修改业务行为时，更新对应 `docs/specs/<Module>/*.md` 并同步索引；恢复已有 Spec 行为的简单 Bug 不新建或修改 Spec。
 - 新增或修改架构/合同决策时，更新对应 `docs/adr/<Module>/*.md` 并同步索引；普通实现不默认创建 ADR。
-- 如果项目已明确使用等价的 Spec/ADR 根目录，遵循项目入口，不创建第二套目录；但仍保持“索引 + 模块目录 + 模块文件”的组织方式。
+- 如果已有项目已明确使用等价的 Spec/Todo 根目录（如 `specs/` + `plans/`），遵循项目入口，不创建第二套目录；但仍保持“索引 + 模块目录 + 模块文件”的组织方式。
 - 文档是否提交到 Git 由项目级规则决定，不改变 Spec/ADR 的本地组织和正确性要求；项目可以声明这些文档仅在本机维护，并用 `.gitignore` 阻止新的文档进入仓库。`.gitignore` 不会自动取消已被 Git 跟踪的历史文件。
 
 只有在用户确认了目标行为或架构/合同决策后，才允许把内容写入 Spec 或 ADR。未收敛的内容继续留在 grilling / Change Proposal / brainstorm 流程中。
@@ -1160,7 +1163,7 @@ Coauthor:
 
 历史提交不重写；本规则只阻止新的 AI 信息披露，不要求也不声称历史提交不存在 AI 参与。
 
-`Governance-Exception: ...` 尾注是 owner 审批记录：它**只**豁免上面的 trailer 清单，不豁免身份检查，也不豁免 message 披露短语检查。
+`Governance-Exception: ...` 尾注是 owner 审批记录，不是作者归属声明，本身不会触发归属拦截；它**不豁免** co-author trailer、身份检查或 message 披露短语检查。
 
 检查分三层，拦截清单与正则以 `~/.codex/check-commit-attribution.sh --print-policy` 为准：
 

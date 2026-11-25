@@ -1,8 +1,13 @@
-# 个人全局 AI 约束源和治理仓本身的检查文件由仓库维护者负责。
+# 个人全局 AI 约束源、模板、本地 Skills、分发/引导脚本与检查门禁均由仓库维护者负责。
 # 项目的本地 AI 约束、Spec 和代码由各项目仓库自己负责。
 
-/global/                             @peanutgao
-/.github/                            @peanutgao
-/.githooks/commit-msg                @peanutgao
-/scripts/check-commit-attribution.sh @peanutgao
-/scripts/check-version-bump.sh       @peanutgao
+/AGENTS.md      @peanutgao
+/VERSION        @peanutgao
+/.gitattributes @peanutgao
+/global/        @peanutgao
+/templates/     @peanutgao
+/skills/        @peanutgao
+/scripts/       @peanutgao
+/tests/         @peanutgao
+/.github/       @peanutgao
+/.githooks/     @peanutgao

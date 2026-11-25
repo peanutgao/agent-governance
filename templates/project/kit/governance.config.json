@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "projectName": "__PROJECT_NAME__",
+  "layout": "single",
+  "apps": [],
+  "sourceRoots": [
+    "src",
+    "app",
+    "lib",
+    "packages",
+    "Sources",
+    "code"
+  ],
+  "specRoots": [
+    "docs/specs",
+    "docs/contracts",
+    "specs",
+    "contracts"
+  ],
+  "todoRoots": [
+    "docs/todos",
+    "plans"
+  ],
+  "specSync": {
+    "enabled": true,
+    "allowedExemptTypes": [
+      "L0",
+      "L1-bug",
+      "internal-refactor"
+    ],
+    "ignoreGlobs": [
+      "**/*.test.*",
+      "**/*.spec.*",
+      "**/*_test.go",
+      "**/*Test.java",
+      "**/*Test.kt",
+      "**/*Tests.swift",
+      "**/test_*.py",
+      "**/*_test.py",
+      "**/__tests__/**",
+      "**/test/**",
+      "**/tests/**"
+    ],
+    "uncheckedTodoMode": "advisory"
+  }
+}

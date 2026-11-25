@@ -1,0 +1,4 @@
+*.sh text eol=lf
+.githooks/* text eol=lf
+AI-GOVERNANCE.md text eol=lf
+scripts/governance/* text eol=lf

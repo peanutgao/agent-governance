@@ -42,11 +42,12 @@ try {
 - `~/.claude/CLAUDE.md`、`~/.pi/agent/AGENTS.md`、`~/.config/opencode/AGENTS.md`、`~/.dsh/AGENTS.md`、`~/.commandcode/AGENTS.md`、`~/.omp/agent/AGENTS.md`、`~/.config/zed/AGENTS.md`、`~/.config/amp/AGENTS.md`：Unix 上是指向真源的软链，Windows 上是普通文件副本；
 - `~/.copilot/copilot-instructions.md`：GitHub Copilot CLI 的个人级入口（内容副本，它不读 AGENTS.md）；
 - `~/.workbuddy-ai/rules/agent-governance.md`：WorkBuddy 用户级规则（带 frontmatter，是生成文件不是软链）；
+- `~/Documents/work/CLAUDE.md`：OrbStack 虚拟机共享 work 目录入口（普通文件副本，供 VM 内工具经挂载读取）；
 - `~/.codex/.gov-version`：已安装版本号。
 
 用 `bash scripts/distribute.sh --list-targets` 可以只查看目标清单，不安装。
 
-本仓根目录的 `AGENTS.md` 是指向 `global/AGENTS.md` 的软链，让治理仓自己受同一套约束。它不是分发产物，随仓库一起 clone 下来；如果丢了（例如被某次打包或复制操作解成普通文件），用 `ln -sf global/AGENTS.md AGENTS.md` 重建，`tests/distribute.sh` 会检查它。
+本仓根目录的 `AGENTS.md` 是指向 `global/AGENTS.md` 的轻量指针文件（非软链、非正文副本），避免工具把同一份规则按不同路径重复注入上下文。它不是分发产物，随仓库一起 clone 下来，`tests/distribute.sh` 会守住它。
 
 不要直接编辑这些分发文件；它们会被下次分发覆盖。要修改全局约束，回到 `agent-governance` 修改、提交并推送。
 

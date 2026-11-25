@@ -1,188 +1,54 @@
 ---
 name: superpowers
-description: "A complete software development methodology and skill composition system, ported from obra/superpowers. Provides structured, repeatable workflow: brainstorming, design, planning, TDD, subagent-driven dev, code review, finishing branch. Use for coding, building projects, refactoring, bug fixing, or any programming tasks."
+description: "Opt-in structured planning and execution workflow for new projects, major refactors, or complex L2 changes: brainstorming, design validation, implementation planning, and verification. Load on demand for substantial upfront planning; do not force onto routine L0/L1 tasks."
 ---
 
 # Superpowers
 
-## Overview
+按需使用的结构化规划与实施流程，配合 `global/AGENTS.md` 的「新项目与大重构的前期规划」与 `ai-change-flow` 使用。
 
-Superpowers is a complete software development methodology that provides AI agents with a structured, repeatable workflow. Ported from the obra/superpowers project, it breaks down the software development process into 7 core phases, each with dedicated skills and checkpoints to ensure high-quality, maintainable code output.
+> 本 Skill 是**可选流程工具**，不是固定前置步骤：
+> - L0 文案/文档修改与普通 L1 局部实现直接按 `global/AGENTS.md` 执行，不套用本流程；
+> - 本 Skill 不得覆盖 `global/AGENTS.md` 的安全、授权与 Git 归属底线（**严禁自动 `git commit`**，不为简单任务额外新建冗余文档）；
+> - 本 Skill 不替代「实现前的独立方案复核」，命中前置复核门禁时仍须先通过独立复核。
 
-## Core Workflow
+## 适用场景
 
-Superpowers follows a strict 7-phase workflow. Each phase is mandatory and cannot be skipped:
+- 从零搭建新项目；
+- 跨模块重构或实质改写架构；
+- 目标明确但存在多个可行架构方案、需要分阶段拆解与验收的 L2 复杂任务。
 
-### 1. Brainstorming
-**Trigger**: Automatically activates at the start of any development task.
-**Goal**: Clarify the user's real needs through questioning, explore alternatives, and produce a verifiable design document.
-**Key Actions**:
-- Ask what the user really wants to achieve (not just surface requirements)
-- Explore multiple design approaches and trade-offs
-- Break design into readable chunks (max 200 words each)
-- Generate design document and save to `design.md`
-- Get user sign-off on the design
+## 核心阶段（按任务需要裁剪）
 
-### 2. Design Validation
-**Trigger**: After Brainstorming completes.
-**Goal**: Ensure the design is complete, feasible, and meets user expectations.
-**Key Actions**:
-- Present design chunks for user review
-- Ask "Is this section clear?"
-- Confirm technical feasibility and constraints
-- Record feedback and update design
+### 1. Brainstorming（需求澄清与方案探索）
+- 业务目标、边界或验收条件不清时，先按 `grilling` 逐问澄清，禁止猜测落地；
+- 需求明确后，搜索仓库已有组件、服务和约定，列出 2–3 个候选方案及取舍，推荐最简可行方案；
+- 已确认的业务行为写入项目约定的 `specs/<Module>/` 并同步索引；未确认内容不进 Spec。
 
-### 3. Implementation Planning
-**Trigger**: After design validation passes.
-**Goal**: Decompose the design into executable, fine-grained development tasks.
-**Key Actions**:
-- Create detailed task list, each task taking 2-5 minutes
-- Each task includes: exact file paths, complete code, verification steps
-- Follow YAGNI (You Aren't Gonna Need It) and DRY (Don't Repeat Yourself)
-- Generate plan document and save to `plan.md`
+### 2. Design Validation（设计确认与独立复核）
+- 将关键架构决定拆成易评审的小块（边界、数据流、失败路径、兼容与迁移影响），与用户对齐；
+- 命中 `global/AGENTS.md` / `ai-change-flow` 独立方案复核条件时，由独立 reviewer 对抗性复核通过后再进入实现；
+- 需要长期保留的架构或契约决策写入项目约定的 `docs/adr/<Module>/`。
 
-### 4. Test-Driven Development (TDD)
-**Trigger**: Automatically activates during implementation.
-**Goal**: Enforce the Red-Green-Refactor cycle.
-**Key Actions**:
-- Write a failing test first (Red)
-- Write minimal code to pass the test (Green)
-- Refactor to keep code clean
-- Delete any code written before tests
-- Follow this cycle for every feature
+### 3. Implementation Planning（可执行任务拆解）
+- 将已确认设计拆为顺序清晰、可独立验证的 todo，落到项目已有计划文件或既有文档结构下（不强制在根目录散落 `design.md`/`plan.md`）；
+- 每个任务写明：目标、精确文件/模块范围、依赖、具体验证命令与预期信号；
+- 坚持 YAGNI 与最小连贯改动，不夹带无关重构或推测性抽象。
 
-### 5. Subagent-Driven Development
-**Trigger**: After plan approval.
-**Goal**: Use subagents to execute tasks in parallel or sequentially.
-**Key Actions**:
-- Create fresh subagent per task
-- Two-stage review: spec compliance, then code quality
-- Set human checkpoints during batch execution
-- Stop and report immediately if subagent deviates from plan
+### 4. Implementation & Testing（实现与相称验证）
+- 存在合适测试接缝时优先采用测试驱动（先写失败测试，再做最小实现，最后重构）；没有合适测试接缝时不强行造无价值桩测试，改用可观测的针对性验证；
+- 严格遵守「只改范围内文件、不吞错掩盖根因、验证先局部后整体」；
+- 绝不在未经用户明确授权时执行 `git commit` 或全量破坏性操作。
 
-### 6. Code Review
-**Trigger**: Between tasks or upon completion.
-**Goal**: Ensure code meets plan and quality standards.
-**Key Actions**:
-- Review code against the plan
-- Report issues by severity: Critical (blocking), Major, Minor
-- Critical issues must be fixed before proceeding
-- Generate review report and save to `review.md`
+### 5. Parallel Subagents（可选，严守并行门禁）
+- 默认单 Agent 串行实施；仅在需求冻结、子任务无共享可变状态、拆分经用户确认且使用 worktree/分区隔离时，才派发并行子 Agent；
+- 合并后必须重新审查集成点并做跨模块验证。
 
-### 7. Finishing Development Branch
-**Trigger**: After all tasks complete.
-**Goal**: Cleanly finish the development cycle.
-**Key Actions**:
-- Verify all tests pass
-- Present options: merge, create PR, keep branch, discard
-- Clean up workspace
-- Generate final report
+### 6. Review & Handoff（对抗性复核与收尾）
+- 宣称完成前执行系统性对抗性复核（根因、边界、反例、回归与验证证据），必要时跑 `code-review` 双轴审查；
+- 保留工作区改动，汇报 `git status` / `git diff` 摘要、实际执行的验证结果和剩余风险，由用户决定后续提交或合并。
 
-## Core Principles
+## 参考资料
 
-### 1. Test-Driven Development
-- Always write tests first
-- Red-Green-Refactor cycle
-- Tests serve as documentation and design tools
-
-### 2. Systematic over Ad-Hoc
-- Follow process rather than guessing
-- Every decision has a rationale
-- Document all assumptions and decisions
-
-### 3. Complexity Reduction
-- Simplicity is the primary goal
-- Remove unnecessary code
-- Prefer the simplest viable solution
-
-### 4. Evidence over Claims
-- Verify rather than declare success
-- Use tests to prove functionality
-- Use data to support decisions
-
-## Skill Trigger Mechanism
-
-Superpowers is a mandatory workflow, not an optional suggestion. When any of the following is detected, the corresponding skill must activate:
-
-1. **User mentions development/programming** -> Start Brainstorming
-2. **Design complete** -> Start Implementation Planning
-3. **Starting to write code** -> Start TDD
-4. **Tasks need parallelism** -> Start Subagent-Driven Development
-5. **Code complete** -> Start Code Review
-6. **Project complete** -> Start Finishing
-
-## Deliverables
-
-Each phase produces documentation to ensure traceability:
-
-| Phase | Output File | Purpose |
-|-------|------------|---------|
-| Brainstorming | `design.md` | Complete design document |
-| Planning | `plan.md` | Detailed implementation plan |
-| Development | `code/` | Source code |
-| Review | `review.md` | Code review report |
-| Finish | `final_report.md` | Project summary |
-
-## Example Workflow
-
-**User Request**: "Build me a todo app"
-
-1. **Brainstorming**: Ask about requirements (Web/Mobile? Auth needed? Data storage?)
-2. **Design**: Generate UI design, architecture diagram, API design
-3. **Planning**: Break down into: create project structure, implement auth, build CRUD, add frontend
-4. **TDD**: Write tests for each feature first
-5. **Subagent**: Dispatch subagents to develop different modules in parallel
-6. **Review**: Review code quality of each module
-7. **Finish**: Merge code, generate deployment docs
-
-## Troubleshooting
-
-**Issue**: Subagent deviates from plan
-**Solution**: Stop immediately, analyze the deviation, adjust plan or re-dispatch
-
-**Issue**: Tests failing
-**Solution**: Return to Red phase, analyze failure cause, fix tests or code
-
-**Issue**: Requirements change
-**Solution**: Return to Brainstorming phase, re-evaluate design
-
-## Reference Resources
-
-For detailed workflow guides and best practices, see `references/workflow.md` and `references/best_practices.md`.
-
-## Resources
-
-This skill includes bundled resource directories for organizing different types of content:
-
-### scripts/
-Executable code (Python/Bash/etc.) that can be run directly to perform specific operations.
-
-**Examples from other skills:**
-- PDF skill: `fill_fillable_fields.py`, `extract_form_field_info.py` - utilities for PDF manipulation
-- DOCX skill: `document.py`, `utilities.py` - Python modules for document processing
-
-**Appropriate for:** Python scripts, shell scripts, or any executable code that performs automation, data processing, or specific operations.
-
-### references/
-Documentation and reference material intended to be loaded into context to inform the agent's process and thinking.
-
-**Examples from other skills:**
-- Product management: `communication.md`, `context_building.md` - detailed workflow guides
-- BigQuery: API reference documentation and query examples
-- Finance: Schema documentation, company policies
-
-**Appropriate for:** In-depth documentation, API references, database schemas, comprehensive guides, or any detailed information to reference while working.
-
-### assets/
-Files not intended to be loaded into context, but rather used within the output produced.
-
-**Examples from other skills:**
-- Brand styling: PowerPoint template files (.pptx), logo files
-- Frontend builder: HTML/React boilerplate project directories
-- Typography: Font files (.ttf, .woff2)
-
-**Appropriate for:** Templates, boilerplate code, document templates, images, icons, fonts, or any files meant to be copied or used in the final output.
-
----
-
-Any unneeded directories can be deleted. Not every skill requires all three types of resources.
+- 阶段模板与检查清单见 `references/workflow.md`；
+- 设计、测试与代码质量准则见 `references/best_practices.md`。按需读取，不必整篇加载。

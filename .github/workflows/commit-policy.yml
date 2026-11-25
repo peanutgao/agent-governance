@@ -1,4 +1,4 @@
-name: Commit attribution policy
+name: Governance checks & commit policy
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   commit-attribution:
-    name: Check commit attribution
+    name: Policy & commit attribution
     runs-on: ubuntu-latest
     steps:
       - name: Checkout full history
@@ -20,8 +20,8 @@ jobs:
       - name: Check version of this revision
         run: bash scripts/check-version-bump.sh
 
-      - name: Run governance test suites
-        run: bash tests/run-all.sh
+      - name: Check repo rule paths
+        run: bash scripts/check-rule-paths.sh
 
       - name: Reject AI/Bot commit attribution
         env:
@@ -69,3 +69,22 @@ jobs:
             bash scripts/check-commit-attribution.sh \
               --range "$PUSH_BEFORE_SHA..$PUSH_AFTER_SHA" --governance
           fi
+
+  test-matrix:
+    name: Test suites (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Configure LF checkout
+        shell: bash
+        run: git config --global core.autocrlf false
+
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Run governance test suites
+        shell: bash
+        run: bash tests/run-all.sh
