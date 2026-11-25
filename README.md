@@ -12,6 +12,7 @@ global/
 ├── AGENTS.md                          # 个人全局通用约束（唯一正文）
 └── git-hooks/                         # 全局 git 钩子（commit-msg 归属门禁 + 转发层）
 onboarding.md                          # 多设备初始化和更新
+docs/guides/                           # 跨项目 AI 上下文工程建设方案与存量接入参考指南
 templates/project/AI-GOVERNANCE.md     # 项目仓库携带的公共治理快照模板
 templates/project/kit/                 # 语言无关的轻量自包含项目治理脚手架模板
 skills/                                # 全局 Skills 清单与仓内本机版本（含 ai-change-flow、new-project-bootstrap）
@@ -197,4 +198,4 @@ git pull --ff-only
 bash scripts/install.sh
 ```
 
-首次使用见 [`onboarding.md`](onboarding.md)。本仓不保存设计文档或历史资料；规则、脚本和检查的当前行为以代码、测试和提交历史为准。
+首次使用见 [`onboarding.md`](onboarding.md)。跨项目与多仓库上下文工程化设计参考见 [`docs/guides/大型软件项目_AI_Agent_上下文工程化建设方案_v2.0.md`](docs/guides/大型软件项目_AI_Agent_上下文工程化建设方案_v2.0.md) 与 [`docs/guides/AI_Agent_多项目上下文工程实施方案.md`](docs/guides/AI_Agent_多项目上下文工程实施方案.md)（仅作按需阅读参考，不注入全局规则上下文）；规则、脚本和检查的当前行为以代码、测试和提交历史为准。

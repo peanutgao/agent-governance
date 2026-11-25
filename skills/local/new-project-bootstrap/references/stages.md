@@ -38,7 +38,8 @@
    bash <project>/scripts/governance/install-hooks.sh
    ```
 3. 补全 `<project>/docs/overview.md`、`<project>/AGENTS.md`（及各端 `<app>/AGENTS.md`）中的真实构建/测试/原生 Lint 命令，并把 `<project>/.github/CODEOWNERS` 中的 `@team-leads` 替换为真实负责人。
-4. 后续公共基线升级继续使用 `bash scripts/sync-project-governance.sh --root <workspace>` 同步 `<project>/AI-GOVERNANCE.md`。
+4. 按 [`existing-repo-onboarding.md`](existing-repo-onboarding.md) §2（`I-01～I-05`）对团队在用的 AI 工具做 1 分钟规则加载实测，确认无祖先 `CLAUDE.md` 或 `AGENTS.override.md` 遮蔽。
+5. 后续公共基线升级继续使用 `bash scripts/sync-project-governance.sh --root <workspace>` 同步 `<project>/AI-GOVERNANCE.md`。
 
 ## Stage 2：成熟开源选型、轻量 ADR、首版 Spec & Todo
 
@@ -61,7 +62,9 @@
 
 ### B. 全项目通用（含 Java / Kotlin / Go / Python 服务端及客户端）必建项
 1. **核心三方库薄封装 / 防腐层**：按实际需要落地统一封装（网络客户端、结构化日志、统一错误模型、强类型配置、存储或鉴权适配），业务层不得裸调底层库。
-2. **原生 Linter / 分层门禁**：配置对应生态规则（如 Java Checkstyle `IllegalImport` / ArchUnit、Kotlin Detekt、golangci-lint、ruff）拦截裸调与越层调用。
+2. **原生 Linter、架构边界与死代码/重复代码门禁（CI 硬红灯）**：
+   - **封装与架构边界**：Web 用 ESLint `no-restricted-imports` + Stylelint；Java 用 Checkstyle + **ArchUnit**（用单测锁死分层依赖方向）；Kotlin 用 Detekt `ForbiddenImport` / Konsist；iOS 用 SwiftLint `custom_rules`；
+   - **死代码与复制冗余清剿（直接用成熟开源工具，不自研脚本）**：Web/TS 接入 **`knip`**（未引用文件/导出/依赖），iOS 接入 **`periphery`**，Java/Kotlin 开启 Detekt/PMD/SpotBugs unused 检查；全语言按需接入 **`jscpd`** 拦截新增复制粘贴代码块。
 3. **登记目录地图与反证校验**：把已建好的 Token、封装组件、三方库封装与公共工具目录登记到 `docs/architecture/tech-stack.md`；用一条临时违规代码验证原生 Linter 确实报错拦截后再清理。
 
 ## Stage 4：Walking Skeleton 端到端贯通验收
@@ -69,10 +72,12 @@
 进入正式业务功能开发前，先跑通 1 条极薄的端到端链路：
 - **带 UI 项目**：1 个最小页面/路由，完全通过 Semantic Token 与二次封装组件渲染，走通构建与单测；
 - **服务端项目**：1 个最小健康检查接口，走通路由 → Service → 统一错误与日志封装 → 单测与构建；
-- **全绿验收信号**：构建、单测、原生 Linter、`check-spec-sync.py` 与 `commit-msg` 钩子全部真实通过。
+- **全绿验收信号**：构建、单测、原生 Linter（含死代码/重复代码检查）、`check-spec-sync.py` 与 `commit-msg` 钩子全部真实通过。
 
-## Stage 5：放行进入常规业务开发
+## Stage 5：放行进入常规业务开发与定期清理闭环
 
 Stage 0–4 全部验收通过后，将 `<project>/docs/todos/001-bootstrap.md` 标为 `Status: ready-to-close` 并勾完收尾，转入常规 Spec-Driven 迭代：
 - 新功能 / 改需求：先更新 `docs/specs/`（或 `docs/contracts/`）与 `docs/todos/` → 再写代码；
-- 写代码前：先查 `docs/architecture/tech-stack.md` 指向的封装与公共目录，优先复用既有能力。
+- 写代码前：先查 `docs/architecture/tech-stack.md` 指向的封装与公共目录，优先复用既有能力；
+- 合并前：对重要变更跑一次独立 `code-review`（含跨仓反重复造轮子、已装开源库核对与死代码审查）；
+- 定期垃圾回收（每 1–2 周）：运行死代码/重复代码扫描清理熵增，并将反复出现的偏移模式**升级为一条新的原生 Linter / ArchUnit 规则**，而非继续往 `AGENTS.md` 堆文字。

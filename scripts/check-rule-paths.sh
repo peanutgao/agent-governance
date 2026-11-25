@@ -27,6 +27,7 @@ REPO_RULE_FILES=(
   skills/local/ai-change-flow/references/full-flow.md
   skills/local/new-project-bootstrap/SKILL.md
   skills/local/new-project-bootstrap/references/stages.md
+  skills/local/new-project-bootstrap/references/existing-repo-onboarding.md
 )
 
 # 检查本机已分发路径（--installed 模式）的规则源。

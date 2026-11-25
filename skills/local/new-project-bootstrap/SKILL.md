@@ -7,7 +7,7 @@ description: Enterprise 6-stage greenfield project bootstrap workflow (clarify w
 
 本 Skill 用于**从零初始化新项目或新独立仓**，按企业 Golden Path / Walking Skeleton 范式执行严格的阶段门禁，防止直接跳进业务编码导致目录散乱、缺 Token/组件/三方库二次封装、缺 Spec/Todo、或不同成员用 AI 风格漂移。
 
-**适用边界**：仅用于新项目起盘或从零重建架构骨架。日常迭代（L0/L1/L2 改动与 Bug 修复）走 `global/AGENTS.md` 与 `ai-change-flow` Skill，不加载本 Skill。
+**适用边界**：主要用于从零新建项目或重建架构骨架；**接手存量老项目接入规范**时，先按 [`references/existing-repo-onboarding.md`](references/existing-repo-onboarding.md) 执行 P0 只读盘点再最小侵入接入，不强拆老仓目录。日常迭代（L0/L1/L2 改动与 Bug 修复）走 `global/AGENTS.md` 与 `ai-change-flow` Skill，不加载本 Skill。
 
 ## 强制 6 阶段顺序（禁止跨阶段写业务代码）
 
@@ -38,4 +38,7 @@ Stage 5: 放行进入常规业务模块开发
 
 ## 详细检查清单
 
-各阶段的逐项交付标准、跨端基建分流清单与原生 Linter 防绕过建议见 [`references/stages.md`](references/stages.md)，按当前所处阶段按需读取。
+- 新建项目 6 阶段逐项交付标准、跨端基建分流清单与原生 Linter 防绕过建议：[`references/stages.md`](references/stages.md)
+- 存量老项目 P0 只读盘点、多工具加载实测验收（I-01～I-05）、大仓检索停止条件与多仓契约发布顺序：[`references/existing-repo-onboarding.md`](references/existing-repo-onboarding.md)
+
+按当前场景按需读取，不整篇预加载。

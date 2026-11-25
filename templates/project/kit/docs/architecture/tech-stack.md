@@ -17,9 +17,11 @@
 - 不自研 HTTP 客户端、DI 容器、事件总线、复杂校验器、日期时间库或认证加密协议；优先采用成熟开源方案。
 - 引入新第三方依赖前按 `AI-GOVERNANCE.md` §13 给出候选对比，更新本表（或 ADR）并通过 `.github/CODEOWNERS` 评审。
 
-## 3. 原生 Linter 防漂移推荐配置（接入 CI）
+## 3. 原生 Linter、死代码与架构门禁推荐（接入 CI）
 
-- **Web / TS**：ESLint `no-restricted-imports`（放行封装目录、报错文案指路封装入口）+ Stylelint `color-no-hex` / `var(--token)`
-- **Java**：Checkstyle `IllegalImport` / `RegexpSinglelineJava`（或 ArchUnit 分层测试）
-- **iOS Swift**：SwiftLint `custom_rules`（禁硬编码 `Color(`/`UIColor(red:`、禁裸 `URLSession.shared`）
-- **Kotlin**：Detekt `ForbiddenImport` / `ForbiddenMethodCall`（含 Compose/XML Token 与组件封装防绕过）
+- **Web / TS**：ESLint `no-restricted-imports`（放行封装目录、报错指路封装入口）+ Stylelint `color-no-hex` + **`knip`**（死代码/未用导出与依赖）
+- **Java**：Checkstyle `IllegalImport` + **ArchUnit**（分层与依赖边界测试）+ PMD / SpotBugs（死代码与重复代码）
+- **iOS Swift**：SwiftLint `custom_rules`（禁硬编码颜色与裸 `URLSession.shared`）+ **`periphery`**（未使用符号与死代码）
+- **Kotlin**：Detekt（`ForbiddenImport` / `ForbiddenMethodCall` / unused 检查）+ Konsist（架构规则）
+- **全语言复制冗余**：**`jscpd`**（拦截新增复制粘贴代码块）
+- **定期垃圾回收**：每 1–2 周清理一次死代码与相似 helper，把反复出现的偏移模式升级成一条新的 Linter / 架构测试规则。

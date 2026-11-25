@@ -23,15 +23,25 @@ Review each axis independently, then aggregate the findings. Use the project's d
 Look for the originating spec, in this order:
 
 1. A path the user supplied or the approved requirement they asked to evaluate.
-2. The project's Spec and Contract entry points, such as `specs/README.md` and the relevant module files.
+2. The project's Spec and Contract entry points, such as `docs/specs/README.md` (or `specs/README.md`), `docs/contracts/README.md`, and the relevant module files.
 3. Relevant issue references in the commit messages, using the project's issue tracker if configured.
 4. If nothing is found, ask the user for the approved source. If there is none, report the missing evidence on the Spec axis.
 
 ### 3. Identify the standards sources
 
-Read the applicable `AGENTS.md` or equivalent project instructions, then relevant coding standards, architecture and contribution documents.
+Read the applicable `AGENTS.md` or equivalent project instructions, then relevant coding standards, architecture, approved stack / wrapper maps (e.g., `docs/architecture/tech-stack.md`), and contribution documents.
 
-On top of whatever the repo documents, the Standards axis always carries the **smell baseline** below — a fixed set of Fowler code smells (_Refactoring_, ch.3) that applies even when a repo documents nothing. Two rules bind it:
+On top of whatever the repo documents, the Standards axis always runs **two mandatory checks**:
+
+#### A. Cross-Repo Anti-Duplication, Reuse & Dead-Code Audit (hard check beyond the diff)
+Do **not** inspect the diff in isolation. Actively search the rest of the repository and its dependency manifests (`package.json`, `pom.xml`, `build.gradle*`, `Package.swift`, `go.mod`, `Cargo.toml`, `pyproject.toml`, etc.) to catch the four most common AI-generated entropy failures:
+- **Reinvented existing helper / component / wrapper** — search the repo's utility, shared, token, component, and service directories for functions/components with equivalent intent (even under a different name). Cite the existing file path if found.
+- **Hand-rolled wheel already covered by installed/mature OSS** — check whether newly written non-trivial logic (parsing, validation, HTTP, dates, retry, formatting, state, etc.) duplicates a library already installed in the repo or a standard mature library that should be preferred over DIY maintenance.
+- **Dead code & orphaned leftovers** — flag unused functions, exports, files, feature flags, commented-out blocks, or superseded implementations left behind by the change.
+- **Style / architecture drift** — flag new patterns (error handling, layering, styling, naming, DI, state) that contradict adjacent code in the same module or bypass documented wrappers/tokens.
+
+#### B. Smell baseline (Fowler _Refactoring_, ch.3)
+Applies even when a repo documents nothing. Two rules bind it:
 
 - **The repo overrides.** A documented repo standard always wins; where it endorses something the baseline would flag, suppress the smell.
 - **Always a judgement call.** Each smell is a labelled heuristic ("possible Feature Envy"), never a hard violation — and, like any standard here, skip anything tooling already enforces.
@@ -58,8 +68,8 @@ When parallel delegation is available and permitted, give each sub-agent its bri
 **Standards sub-agent prompt** — include:
 
 - The full diff command and commit list.
-- The list of standards-source files you found in step 3, **plus the smell baseline from step 3** pasted in full — the sub-agent has no other access to it.
-- The brief: "Report — per file/hunk where relevant — (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. Distinguish hard violations from judgement calls — documented-standard breaches can be hard, but baseline smells are always judgement calls, and a documented repo standard overrides the baseline. Skip anything tooling enforces. Under 400 words."
+- The list of standards-source files you found in step 3, **plus the cross-repo anti-duplication/reuse/dead-code audit rules and smell baseline from step 3** pasted in full — the sub-agent has no other access to them.
+- The brief: "Report — per file/hunk where relevant — (a) every place the diff violates a documented standard: cite the standard (file + rule); (b) cross-repo reuse & entropy findings: actively search the repo's existing utilities/components/wrappers and dependency manifests to flag reinvented existing methods, DIY wheels duplicating installed/mature open-source libraries, dead/orphaned code left behind, or style drift from adjacent module code (cite existing file paths or manifest entries); and (c) any baseline smell you spot: name it and quote the hunk. Distinguish hard violations from judgement calls — documented-standard breaches and verified reuse/dead-code findings can be hard, while baseline smells are judgement calls, and a documented repo standard overrides the baseline. Skip anything tooling already enforces. Under 500 words."
 
 **Spec sub-agent prompt** — include:
 

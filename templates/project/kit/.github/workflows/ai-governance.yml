@@ -51,9 +51,10 @@ jobs:
             bash scripts/governance/check-commit-attribution.sh --range "$RANGE"
           fi
 
-      # 按项目技术栈接入原生 Linter 与测试（示例）：
-      # - name: Native lint & test
-      #   run: npm run lint && npm test
-      #   # Java: ./mvnw -q checkstyle:check test
-      #   # iOS: swiftlint lint --strict && swift test
+      # 按项目技术栈接入原生 Linter、死代码/重复代码检测与测试（示例）：
+      # - name: Native lint, dead-code & test
+      #   run: npm run lint && npx knip && npm test
+      #   # Java: ./mvnw -q checkstyle:check test   (含 ArchUnit / PMD)
+      #   # iOS: swiftlint lint --strict && periphery scan && swift test
       #   # Kotlin: ./gradlew detekt test
+      #   # 跨语言复制冗余: npx jscpd --threshold 5 .
