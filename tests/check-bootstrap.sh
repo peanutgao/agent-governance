@@ -18,7 +18,7 @@ esac
 
 # 1. 全部 Shell 脚本与钩子语法检查。
 syntax_ok=1
-for file in "$ROOT_DIR"/scripts/*.sh "$ROOT_DIR"/.githooks/* "$ROOT_DIR"/global/git-hooks/* "$ROOT_DIR"/tests/*.sh; do
+for file in "$ROOT_DIR"/scripts/*.sh "$ROOT_DIR"/.githooks/* "$ROOT_DIR"/tests/*.sh; do
   [[ -f "$file" ]] || continue
   if ! bash -n "$file" 2>&1; then
     printf '  syntax error: %s\n' "$file" >&2
@@ -75,7 +75,7 @@ tpl_bytes="$(wc -c <"$ROOT_DIR/templates/project/AI-GOVERNANCE.md" | tr -d '[:sp
 (( agents_bytes <= 24000 )) && pass global-agents-within-24000-bytes || fail "global-agents-within-24000-bytes ($agents_bytes)"
 (( tpl_bytes <= 23500 )) && pass template-within-23500-bytes || fail "template-within-23500-bytes ($tpl_bytes)"
 
-if grep -rnE 'global/ai-change-implementation-prompt\.md|hengqin|三仓|grill-with-docs|fill_fillable_fields|PDF skill' \
+if grep -rnE 'global/ai-change-implementation-prompt\.md|global/git-hooks|~/\.codex/git-hooks|hengqin|三仓|grill-with-docs|fill_fillable_fields|PDF skill' \
   "$ROOT_DIR/AGENTS.md" "$ROOT_DIR/README.md" "$ROOT_DIR/onboarding.md" \
   "$ROOT_DIR/global" "$ROOT_DIR/scripts" "$ROOT_DIR/skills" "$ROOT_DIR/templates" >/dev/null 2>&1; then
   fail no-stale-references-or-leaks

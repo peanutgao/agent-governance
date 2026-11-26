@@ -9,8 +9,7 @@
 ```text
 AGENTS.md                              # 指针文件 → global/AGENTS.md（本仓自身的工作区级入口）
 global/
-├── AGENTS.md                          # 个人全局通用约束（唯一正文）
-└── git-hooks/                         # 全局 git 钩子（commit-msg 归属门禁 + 转发层）
+└── AGENTS.md                          # 个人全局通用约束（唯一正文）
 onboarding.md                          # 多设备初始化和更新
 docs/guides/                           # 跨项目 AI 上下文工程建设方案与存量接入参考指南
 templates/project/AI-GOVERNANCE.md     # 项目仓库携带的公共治理快照模板
@@ -37,7 +36,6 @@ VERSION                                # 基线版本号
 |---|---|---|
 | Codex | `~/.codex/AGENTS.md` | 内容副本（真源） |
 | Codex | `~/.codex/check-commit-attribution.sh` | 内容副本，可复制进项目仓库 |
-| 所有工具 | `~/.codex/git-hooks/`（旧版 `commit-msg` 及兼容转发文件） | 内容副本 + 可执行位 |
 | Claude Code | `~/.claude/CLAUDE.md` | 软链 |
 | pi | `~/.pi/agent/AGENTS.md` | 软链 |
 | opencode | `~/.config/opencode/AGENTS.md` | 软链 |
@@ -59,7 +57,7 @@ WorkBuddy 需要单独处理：它的用户级规则是 `<configDir>/rules/*.md`
 
 ### 能力边界：这是上下文约束，不是强制门禁
 
-本仓分发的全部是 Markdown 规则和 git 钩子。Markdown 进入模型上下文后**不构成无条件阻断**——Claude Code 官方明确说 CLAUDE.md 是上下文而非强制配置，要阻断某个动作得用 `PreToolUse` hook 或 `permissions.deny`。
+本仓分发的全部是 Markdown 规则和提交归属检查脚本。Markdown 进入模型上下文后**不构成无条件阻断**——Claude Code 官方明确说 CLAUDE.md 是上下文而非强制配置，要阻断某个动作得用 `PreToolUse` hook 或 `permissions.deny`。
 
 本仓不接管 `settings.json`，理由是可验证的：
 
@@ -73,9 +71,8 @@ WorkBuddy 需要单独处理：它的用户级规则是 `<configDir>/rules/*.md`
 
 项目在自身 `commit-msg` 的最后一步接入归属检查器，由 CI 对新增提交再次校验。这样 Git 继续按原有配置选择项目钩子，项目可以在检查前完成提交消息的改写。
 
-- 分发迁移旧版由治理仓直接写入的全局 `core.hooksPath`，保留其他 Git 配置。来自系统配置或包含文件的旧覆盖会报出，需在其来源处理。
-- 已接入 `~/.codex/git-hooks/commit-msg` 的项目可以保留该入口。新接入建议直接调用下方的检查器命令。
-- `--check` 校验受管文件、执行位和旧全局覆盖。项目的执行链与 CI 须分别验证。
+- 本仓不修改全局 `core.hooksPath`，也不再分发旧版全局 `git-hooks/`。项目请直接复制 `~/.codex/check-commit-attribution.sh`（或使用脚手架 `scripts/init-project-governance.sh`）接入本地 `commit-msg` 与 CI。
+- `--check` 校验本机受管副本与当前工作树的一致性。项目的钩子执行链与 CI 须分别验证。
 
 治理仓在本地把 `core.hooksPath` 指向 `.githooks`，用 `--governance` 模式描述本政策。
 
@@ -90,7 +87,7 @@ WorkBuddy 需要单独处理：它的用户级规则是 `<configDir>/rules/*.md`
 
 ```bash
 bash scripts/distribute.sh
-bash scripts/distribute.sh --check          # 比对当前工作树、执行位和旧全局覆盖
+bash scripts/distribute.sh --check          # 比对当前工作树与已安装副本
 bash scripts/distribute.sh --list-targets   # 只看目标清单，不安装
 ```
 
@@ -105,9 +102,9 @@ bash scripts/distribute.sh --list-targets   # 只看目标清单，不安装
 
 - 安装、回滚和校验均预检目标类型、父目录及重复或嵌套路径。受管普通文件拒绝软链，约定为软链的工具入口可以保留链接。若显式允许外部目标，仍须使用无跳转且父目录为普通目录的绝对路径。
 - 安装前对全部受管路径 + `.gov-version` 做一次**整组快照**，存于 `~/.codex/.gov-backup/` 下的时间戳目录，默认保留最近 10 份（可用 `AGENT_GOVERNANCE_BACKUP_KEEP` 调整）。
-- 内容一致且无待清理退役路径时跳过，不产生冗余快照；不一致时先快照当前状态再覆盖。
+- 内容一致时跳过，不产生冗余快照；不一致时先快照当前状态再覆盖。
 - 软链目标若原是普通文件，同样随整组快照保存后再替换为软链。
-- `--check` 同步校验受管副本、钩子执行位、旧全局覆盖与退役路径残留。
+- `--check` 校验受管副本与 `.gov-version` 是否与当前工作树一致；`--rollback` 要求快照清单与当前全部受管目标完整匹配。
 
 回滚到最近一次分发前的整组状态。若分发中断，确认操作已经退出后再处理遗留锁目录：
 
@@ -117,7 +114,7 @@ bash scripts/distribute.sh --rollback
 
 ## 全局 Skills
 
-统一安装先分发规则，再同步 [Skills 清单](skills/manifest.json)。安装条件、同步目标、冲突接管和回退见 [全局 Skills 使用说明](skills/README.md)。如果规则已分发而 Skills 同步失败，解决同步错误后可单独重跑 `python3 scripts/skills.py sync`。
+统一安装先分发规则，再以 `skills.py sync --adopt-all` 同步 [Skills 清单](skills/manifest.json)（自动覆盖同名旧 Skill 并保留事务快照以支持回退）。安装条件、同步目标、冲突接管和回退见 [全局 Skills 使用说明](skills/README.md)。如果规则已分发而 Skills 同步失败，解决同步错误后可单独重跑 `python3 scripts/skills.py sync --adopt-all`。
 
 ### 详细流程作为 Skill，不再单独分发文件
 

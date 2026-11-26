@@ -34,11 +34,10 @@ try {
 
 已经自行克隆仓库且运行时齐备时，可以从仓库根目录直接运行 `bash scripts/install.sh`。Windows 从 PowerShell 运行 `scripts/bootstrap.ps1`，可一并准备所需运行时。
 
-安装脚本先分发以下全局规则，再把 [清单中的 Skills](skills/manifest.json) 同步到 [各工具的全局 Skills 目录](skills/README.md#分发路径)。首次安装的依赖见 [Skills 使用说明](skills/README.md)。
+安装脚本先分发以下全局规则，再以 `--adopt-all` 自动接管并把 [清单中的 Skills](skills/manifest.json) 同步到 [各工具的全局 Skills 目录](skills/README.md#分发路径)（覆盖前自动建事务快照，可用 `skills.py rollback` 回退）。首次安装的依赖见 [Skills 使用说明](skills/README.md)。
 
 - `~/.codex/AGENTS.md`：全局通用 AI 开发约束；
 - `~/.codex/check-commit-attribution.sh`：commit 归属检查器，可复制进项目仓库；
-- `~/.codex/git-hooks/`：旧全局钩子兼容文件。分发移除旧版直接挂载的治理路径，保留项目和其他来源的 Git 配置；
 - `~/.claude/CLAUDE.md`、`~/.pi/agent/AGENTS.md`、`~/.config/opencode/AGENTS.md`、`~/.dsh/AGENTS.md`、`~/.commandcode/AGENTS.md`、`~/.omp/agent/AGENTS.md`、`~/.config/zed/AGENTS.md`、`~/.config/amp/AGENTS.md`：Unix 上是指向真源的软链，Windows 上是普通文件副本；
 - `~/.copilot/copilot-instructions.md`：GitHub Copilot CLI 的个人级入口（内容副本，它不读 AGENTS.md）；
 - `~/.workbuddy-ai/rules/agent-governance.md`：WorkBuddy 用户级规则（带 frontmatter，是生成文件不是软链）；
@@ -75,7 +74,7 @@ bash scripts/distribute.sh --rollback      # 回到最近一次分发前的整�
 
 分发门禁包含「本地仓不落后 origin」：origin 存在但 fetch 失败会直接中止，不会把本地旧规则装成「已是最新」。
 
-`--check` 校验副本、钩子执行位及旧全局覆盖。各项目需接入自己的提交归属检查。`--rollback` 先核对完整快照，恢复文件并保留现有 Git 配置。
+`--check` 校验受管副本与版本号是否与治理仓一致。各项目需自行接入提交归属检查。`--rollback` 先核对完整快照清单，恢复全部受管目标。
 
 ## 使用项目
 

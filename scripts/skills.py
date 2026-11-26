@@ -251,7 +251,9 @@ def roots_for(device, isolated):
     yield "codex-legacy", device / ".codex/skills"
 
 
-def make_plan(skills, roots, store, state, adopt):
+def make_plan(skills, roots, store, state, adopt, adopt_all=False):
+    if adopt_all and adopt:
+        raise ValueError("--adopt 与 --adopt-all 不能同时使用")
     primary = {}
     targets = []
     for tool, root in roots:
@@ -267,7 +269,7 @@ def make_plan(skills, roots, store, state, adopt):
                 action = "ready" if state["managed"].get(str(path)) == current else "reuse"
             elif state["managed"].get(str(path)) == current:
                 action = "update"
-            elif identifier in adopt:
+            elif adopt_all or identifier in adopt:
                 action = "adopt"
             else:
                 action = "conflict"
@@ -283,9 +285,13 @@ def make_plan(skills, roots, store, state, adopt):
     for target in targets:
         if target.action not in {"conflict", "reuse", "adopt"} or not target.path.is_symlink():
             continue
-        linked = primary.get(target.path.resolve())
+        try:
+            resolved = target.path.resolve()
+        except (OSError, RuntimeError):
+            continue
+        linked = primary.get(resolved)
         if linked and linked.action in CHANGES and linked.skill.name == target.skill.name:
-            if target.action != "adopt":
+            if adopt_all or target.action != "adopt":
                 target.action = "linked"
     return targets
 
@@ -301,11 +307,12 @@ def report(targets, state):
 
 def sync(args, skills, cli, roots, store, state):
     selected = set(args.adopt)
-    current_plan = make_plan(skills, roots, store, state, set())
-    conflicts = {target.identifier for target in current_plan if target.action == "conflict"}
-    if selected - conflicts:
-        raise ValueError(f"--adopt 只接受预览中的冲突项: {', '.join(sorted(selected - conflicts))}")
-    plan = make_plan(skills, roots, store, state, selected)
+    if selected:
+        current_plan = make_plan(skills, roots, store, state, set())
+        conflicts = {target.identifier for target in current_plan if target.action == "conflict"}
+        if selected - conflicts:
+            raise ValueError(f"--adopt 只接受预览中的冲突项: {', '.join(sorted(selected - conflicts))}")
+    plan = make_plan(skills, roots, store, state, selected, adopt_all=args.adopt_all)
     report(plan, state)
     changes = [target for target in plan if target.action in CHANGES]
     if changes:
@@ -360,9 +367,12 @@ def main():
     parser.add_argument("--home", type=Path, help="用于隔离验证的用户目录")
     parser.add_argument("--proxy", help="获取 GitHub 源时使用的 HTTP 或 SOCKS 代理")
     parser.add_argument("--adopt", action="append", default=[], metavar="TOOL:SKILL")
+    parser.add_argument("--adopt-all", action="store_true", help="自动接管并覆盖全部同名冲突 Skill（仍建快照可回退）")
     args = parser.parse_args()
-    if (args.adopt or args.proxy) and args.command != "sync":
-        parser.error("--adopt 和 --proxy 仅用于 sync")
+    if (args.adopt or args.adopt_all or args.proxy) and args.command != "sync":
+        parser.error("--adopt、--adopt-all 和 --proxy 仅用于 sync")
+    if args.adopt and args.adopt_all:
+        parser.error("--adopt 与 --adopt-all 不能同时使用")
     try:
         device = (args.home or Path.home()).resolve(strict=True)
         state_root = (device / ".local/state/agent-governance/skills").resolve()

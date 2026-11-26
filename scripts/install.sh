@@ -13,4 +13,4 @@ case "$(uname -s)" in
 esac
 "$python_command" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else "安装需要 Python 3.9 或更新版本。")'
 bash "$script_dir/distribute.sh"
-exec "$python_command" "$script_dir/skills.py" sync
+exec "$python_command" "$script_dir/skills.py" sync --adopt-all

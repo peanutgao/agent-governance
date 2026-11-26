@@ -338,6 +338,118 @@ class SkillsTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "路径跳转"):
                 list(skills_mod.roots_for(self.home, isolated=False))
 
+    def test_adopt_all_overwrites_conflicts_and_rolls_back(self):
+        # 1) 未受管冲突目录；2) 指向外部目录的软链；3) 先同步再手工修改的受管目录。
+        self.command("sync")
+        edited = self.target(".dsh/skills")
+        self.write_skill(edited, "Manual local edit")
+
+        manual_dir = self.target(".agents/skills")
+        shutil.rmtree(manual_dir)
+        self.write_skill(manual_dir, "Old manual install")
+
+        external = self.sandbox / "external-skill"
+        self.write_skill(external, "External version")
+        claude_path = self.target(".claude/skills")
+        shutil.rmtree(claude_path)
+        if SYMLINKS_SUPPORTED:
+            claude_path.symlink_to(external, target_is_directory=True)
+        else:
+            self.write_skill(claude_path, "External copy")
+
+        # 不带 --adopt-all 仍按冲突拒绝。
+        self.command("sync", code=1)
+        # CLI 校验：非 sync 拒绝 --adopt-all，且不能与 --adopt 混用。
+        self.command("plan", "--adopt-all", code=2)
+        self.command("sync", "--adopt-all", "--adopt", f"codex:{NAME}", code=2)
+
+        output = self.command("sync", "--adopt-all")
+        self.assertIn(f"adopt     codex:{NAME}", output)
+        self.assertIn(f"adopt     dsh:{NAME}", output)
+        self.assertIn("Release one", (manual_dir / "SKILL.md").read_text())
+        self.assertIn("Release one", (edited / "SKILL.md").read_text())
+        self.assertIn("Release one", (claude_path / "SKILL.md").read_text())
+        self.assertFalse(claude_path.is_symlink())
+        self.assertIn("External version", (external / "SKILL.md").read_text())
+        self.command("status")
+
+        # 回滚恢复覆盖前的全部现场（含外部软链）。
+        self.command("rollback")
+        self.assertIn("Old manual install", (manual_dir / "SKILL.md").read_text())
+        self.assertIn("Manual local edit", (edited / "SKILL.md").read_text())
+        if SYMLINKS_SUPPORTED:
+            self.assertTrue(claude_path.is_symlink())
+            self.assertEqual(claude_path.readlink(), external)
+
+    @unittest.skipUnless(SYMLINKS_SUPPORTED, "requires symlink privilege")
+    def test_adopt_all_preserves_internal_linked_symlinks_both_directions(self):
+        # 正向：claude-code -> codex（stale dir）；反向：pi -> omp（stale dir）。
+        codex_path = self.target(".agents/skills")
+        self.write_skill(codex_path, "Stale codex")
+        claude_path = self.target(".claude/skills")
+        claude_path.parent.mkdir(parents=True, exist_ok=True)
+        claude_path.symlink_to(codex_path, target_is_directory=True)
+
+        omp_path = self.target(".omp/agent/skills")
+        self.write_skill(omp_path, "Stale omp")
+        pi_path = self.target(".pi/agent/skills")
+        pi_path.parent.mkdir(parents=True, exist_ok=True)
+        pi_path.symlink_to(omp_path, target_is_directory=True)
+
+        output = self.command("sync", "--adopt-all")
+        self.assertIn(f"linked    claude-code:{NAME}", output)
+        self.assertIn(f"linked    pi:{NAME}", output)
+        self.assertTrue(claude_path.is_symlink())
+        self.assertTrue(pi_path.is_symlink())
+        self.assertIn("Release one", (claude_path / "SKILL.md").read_text())
+        self.assertIn("Release one", (pi_path / "SKILL.md").read_text())
+
+    @unittest.skipUnless(SYMLINKS_SUPPORTED, "requires symlink privilege")
+    def test_adopt_all_handles_symlink_loop_without_crashing(self):
+        loop_a = self.target(".claude/skills")
+        loop_b = self.sandbox / "loop-b"
+        loop_a.parent.mkdir(parents=True, exist_ok=True)
+        loop_a.symlink_to(loop_b)
+        loop_b.symlink_to(loop_a)
+
+        self.assertIn(f"conflict  claude-code:{NAME}", self.command("plan"))
+        self.command("sync", "--adopt-all")
+        self.assertFalse(loop_a.is_symlink())
+        self.assertIn("Release one", (loop_a / "SKILL.md").read_text())
+        self.command("rollback")
+        self.assertTrue(loop_a.is_symlink())
+        self.assertEqual(loop_a.readlink(), loop_b)
+
+    def test_adopt_all_handles_readonly_files_and_dirs_and_rolls_back(self):
+        # 模拟 git clone 留下的 0444 只读文件与 0555 只读子目录（含目录内软链）。
+        conflict_dir = self.target(".claude/skills")
+        self.write_skill(conflict_dir, "Cloned skill")
+        ro_dir = conflict_dir / "pack"
+        ro_dir.mkdir()
+        ro_file = ro_dir / "obj.pack"
+        ro_file.write_text("immutable pack\n", encoding="utf-8")
+        if SYMLINKS_SUPPORTED:
+            (ro_dir / "dangling").symlink_to("missing-target")
+        os.chmod(ro_file, 0o444)
+        if os.name != "nt":
+            os.chmod(ro_dir, 0o555)
+        self.addCleanup(
+            lambda: (
+                os.chmod(ro_dir, 0o700) if ro_dir.exists() and os.name != "nt" else None,
+                os.chmod(ro_file, 0o600) if ro_file.exists() else None,
+            )
+        )
+
+        self.command("sync", "--adopt-all")
+        state_root = self.home / ".local/state/agent-governance/skills"
+        self.assertFalse((state_root / "pending.json").exists())
+        self.assertIn("Release one", (conflict_dir / "SKILL.md").read_text())
+
+        self.command("rollback")
+        self.assertFalse((state_root / "pending.json").exists())
+        self.assertIn("Cloned skill", (conflict_dir / "SKILL.md").read_text())
+        self.assertEqual((conflict_dir / "pack/obj.pack").read_text(encoding="utf-8"), "immutable pack\n")
+
 
 if __name__ == "__main__":
     unittest.main()

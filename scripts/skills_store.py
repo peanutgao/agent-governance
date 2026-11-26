@@ -48,7 +48,7 @@ def path_key(path, *, ignore_executable=os.name == "nt"):
 def content_key(path):
     try:
         resolved = path.resolve(strict=True)
-    except (FileNotFoundError, RuntimeError):
+    except (OSError, RuntimeError):
         return None
     return path_key(resolved) if resolved.is_dir() else None
 
@@ -60,6 +60,30 @@ def copy_path(source, destination):
         shutil.copytree(source, destination, symlinks=True)
     else:
         shutil.copy2(source, destination, follow_symlinks=False)
+
+
+def remove_tree(path):
+    """Remove a directory tree even when it contains read-only files or directories."""
+    root = Path(path)
+
+    def handle_readonly(func, failed, exc):
+        if not isinstance(exc, PermissionError) or func not in (os.unlink, os.rmdir, os.remove):
+            raise exc
+        target = Path(failed)
+        parent = target.parent
+        if inside(parent, root) and not parent.is_symlink():
+            os.chmod(parent, 0o700)
+        if inside(target, root) and not target.is_symlink():
+            os.chmod(target, 0o700 if target.is_dir() else 0o600)
+        func(failed)
+
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(root, onexc=handle_readonly)
+    else:
+        def handle_onerror(func, failed, exc_info):
+            handle_readonly(func, failed, exc_info[1])
+
+        shutil.rmtree(root, onerror=handle_onerror)
 
 
 def publish_path(staged, destination):
@@ -195,10 +219,10 @@ class Store:
                 if path.exists() or path.is_symlink():
                     raise ValueError(f"路径被外部程序占用，原文件保留在 {old}: {path}") from error
                 publish_path(old, path)
-            shutil.rmtree(staging)
+            remove_tree(staging)
             raise
         else:
-            shutil.rmtree(staging)
+            remove_tree(staging)
 
     def recover(self):
         if not self.pending.exists():
@@ -228,13 +252,13 @@ class Store:
             recovery.append((entry, path, actual, backup, staging, recovering))
         for entry, path, actual, backup, staging, recovering in recovery:
             if recovering.exists():
-                shutil.rmtree(recovering)
+                remove_tree(recovering)
             if actual != entry["before"]:
                 self.replace(path, backup, actual, recovering)
             if staging.exists():
-                shutil.rmtree(staging)
+                remove_tree(staging)
         self.pending.unlink()
-        shutil.rmtree(snapshot)
+        remove_tree(snapshot)
 
     def prune_snapshots(self, latest_tx):
         keep = backup_keep_limit()
@@ -263,7 +287,7 @@ class Store:
         for child in self.root.iterdir():
             if child.is_dir() and not child.is_symlink() and HEX_TX.fullmatch(child.name):
                 if child.name not in kept_names:
-                    shutil.rmtree(child)
+                    remove_tree(child)
 
     def apply(self, changes, state, rollback_to=None):
         if rollback_to is None:
@@ -287,7 +311,7 @@ class Store:
             write_json(self.pending, transaction)
         except BaseException:
             if not self.pending.exists():
-                shutil.rmtree(snapshot)
+                remove_tree(snapshot)
             raise
         try:
             for index, (path, source, expected) in enumerate(changes):
@@ -309,8 +333,8 @@ class Store:
             raise
         self.pending.unlink()
         if rollback_to is not None:
-            shutil.rmtree(snapshot)
-            shutil.rmtree(self.snapshot(state["latest"]))
+            remove_tree(snapshot)
+            remove_tree(self.snapshot(state["latest"]))
         else:
             self.prune_snapshots(next_state["latest"])
 

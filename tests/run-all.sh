@@ -9,7 +9,6 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SUITES=(
   tests/check-commit-attribution.sh
   tests/check-hook.sh
-  tests/check-global-hook.sh
   tests/check-version-bump.sh
   tests/check-rule-paths.sh
   tests/check-bootstrap.sh

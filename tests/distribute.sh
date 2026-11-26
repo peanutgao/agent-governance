@@ -41,19 +41,16 @@ make_fixture() {
   local name="$1"
   local repo="$TEST_ROOT/$name/repo"
 
-  mkdir -p "$repo/global/git-hooks" "$repo/.github" "$repo/.githooks" "$repo/scripts" "$repo/tests" "$repo/templates/project" "$repo/skills/local/ai-change-flow/references"
+  mkdir -p "$repo/global" "$repo/.github" "$repo/.githooks" "$repo/scripts" "$repo/tests" "$repo/templates/project" "$repo/skills/local/ai-change-flow/references"
   git init -q "$repo"
   git -C "$repo" config user.name "Joseph Koh"
   git -C "$repo" config user.email "joseph@example.com"
+  git -C "$repo" config commit.gpgsign false
   mkdir -p "$TEST_ROOT/empty-hooks"
   git -C "$repo" config core.hooksPath "$TEST_ROOT/empty-hooks"
 
   printf 'global rules v1\n' >"$repo/global/AGENTS.md"
   printf 'skill flow v1\n' >"$repo/skills/local/ai-change-flow/references/full-flow.md"
-  printf 'global commit-msg hook\n' >"$repo/global/git-hooks/commit-msg"
-  printf 'global chain helper\n' >"$repo/global/git-hooks/_chain"
-  printf 'global pre-commit hook\n' >"$repo/global/git-hooks/pre-commit"
-  printf 'global pre-push hook\n' >"$repo/global/git-hooks/pre-push"
   printf 'owners\n' >"$repo/.github/CODEOWNERS"
   printf 'hook\n' >"$repo/.githooks/commit-msg"
   printf 'readme\n' >"$repo/README.md"
@@ -198,20 +195,19 @@ else
   failures=$((failures + 1))
 fi
 
-# 模拟更早版本快照（仅包含前 2 条受管路径），仍应可安全回滚，不因新增目标失败。
+# 不完整或旧子集快照清单必须被拒绝，且不得半回滚既有文件。
 subset_snap="$rollback_home/.codex/.gov-backup/99990101-000000-00000000"
 mkdir -p "$subset_snap"
 printf 'from older schema\n' >"$subset_snap/0"
 printf '1.0.5\n' >"$subset_snap/1"
 printf '0\t%s\tpresent\n1\t%s\tpresent\n' \
   "$rollback_home/.codex/AGENTS.md" "$rollback_home/.codex/.gov-version" >"$subset_snap/manifest"
-if with_home "$rollback_home" bash "$rollback_repo/scripts/distribute.sh" --rollback >"$TEST_ROOT/subset-rollback.out" 2>&1 &&
-  [[ "$(<"$rollback_home/.codex/AGENTS.md")" == 'from older schema' ]] &&
-  [[ "$(<"$rollback_home/.codex/.gov-version")" == '1.0.5' ]]; then
-  printf 'PASS rollback-supports-older-target-subset\n'
+expect_failure rollback-rejects-incomplete-manifest \
+  with_home "$rollback_home" bash "$rollback_repo/scripts/distribute.sh" --rollback
+if [[ "$(<"$rollback_home/.codex/AGENTS.md")" == "$expected_agents" ]]; then
+  printf 'PASS rollback-incomplete-manifest-preserves-agents\n'
 else
-  printf 'FAIL rollback-supports-older-target-subset\n' >&2
-  cat "$TEST_ROOT/subset-rollback.out" >&2 || true
+  printf 'FAIL rollback-incomplete-manifest-preserves-agents\n' >&2
   failures=$((failures + 1))
 fi
 
@@ -227,25 +223,24 @@ else
   printf 'FAIL rollback-preserves-unmanaged-settings\n' >&2
   failures=$((failures + 1))
 fi
+rm -rf "$subset_snap"
 
-# 预检原子性：若快照包含已退役路径且该路径被替换成软链，必须在写前整组拒绝，不得半回滚前项。
+# 预检原子性：完整快照中后续受管普通文件若被替换成软链，必须在写前整组拒绝，不得半回滚前项。
 if [[ "$native_windows" == 0 ]]; then
   printf 'atomic sentinel\n' >"$rollback_home/.codex/AGENTS.md"
-  printf 'new retired content\n' >"$subset_snap/1"
-  printf '0\t%s\tpresent\n1\t%s\tpresent\n' \
-    "$rollback_home/.codex/AGENTS.md" "$rollback_home/.codex/ai-change-implementation-prompt.md" >"$subset_snap/manifest"
-  ln -s "$rollback_home/.claude/settings.json" "$rollback_home/.codex/ai-change-implementation-prompt.md"
-  expect_failure rollback-prechecks-retired-symlink \
+  rm -f "$rollback_home/.codex/check-commit-attribution.sh"
+  ln -s "$rollback_home/.claude/settings.json" "$rollback_home/.codex/check-commit-attribution.sh"
+  expect_failure rollback-prechecks-later-target-symlink \
     with_home "$rollback_home" bash "$rollback_repo/scripts/distribute.sh" --rollback
-  rm -f "$rollback_home/.codex/ai-change-implementation-prompt.md"
+  rm -f "$rollback_home/.codex/check-commit-attribution.sh"
+  printf '%s\n' "$expected_checker" >"$rollback_home/.codex/check-commit-attribution.sh"
   if [[ "$(<"$rollback_home/.codex/AGENTS.md")" == 'atomic sentinel' ]]; then
-    printf 'PASS rollback-no-partial-write-on-retired-symlink\n'
+    printf 'PASS rollback-no-partial-write-on-later-target-symlink\n'
   else
-    printf 'FAIL rollback-no-partial-write-on-retired-symlink\n' >&2
+    printf 'FAIL rollback-no-partial-write-on-later-target-symlink\n' >&2
     failures=$((failures + 1))
   fi
 fi
-rm -rf "$subset_snap"
 
 # 4. 治理仓自身的工作区级入口：根 AGENTS.md 必须是指针，不能是软链或真源副本。
 if [[ -f "$ROOT_DIR/AGENTS.md" && ! -L "$ROOT_DIR/AGENTS.md" ]] &&
@@ -267,25 +262,8 @@ expect_same_content canonical-agents "$targets_repo/global/AGENTS.md" "$canonica
 expect_same_content canonical-checker \
   "$targets_repo/scripts/check-commit-attribution.sh" \
   "$targets_home/.codex/check-commit-attribution.sh"
-expect_same_content canonical-hook-commit-msg \
-  "$targets_repo/global/git-hooks/commit-msg" \
-  "$targets_home/.codex/git-hooks/commit-msg"
 expect_same_content copy-work-claude "$targets_repo/global/AGENTS.md" "$targets_home/Documents/work/CLAUDE.md"
 expect_same_content copy-copilot "$targets_repo/global/AGENTS.md" "$targets_home/.copilot/copilot-instructions.md"
-
-if [[ -x "$targets_home/.codex/git-hooks/commit-msg" && -x "$targets_home/.codex/git-hooks/pre-commit" ]]; then
-  printf 'PASS global-hooks-executable\n'
-else
-  printf 'FAIL global-hooks-executable\n' >&2
-  failures=$((failures + 1))
-fi
-
-if with_home "$targets_home" git config --global --get core.hooksPath >/dev/null 2>&1; then
-  printf 'FAIL distribution-must-not-mask-native-hooks\n' >&2
-  failures=$((failures + 1))
-else
-  printf 'PASS distribution-does-not-mask-native-hooks\n'
-fi
 
 expect_symlink_or_copy link-claude-code "$canonical" "$targets_home/.claude/CLAUDE.md"
 expect_symlink_or_copy link-pi "$canonical" "$targets_home/.pi/agent/AGENTS.md"
@@ -327,31 +305,7 @@ else
   failures=$((failures + 1))
 fi
 
-# 7. 退役路径：--check 必须检出未退役孤儿文件；分发必须迁走并留备份。
-retired_file="$targets_home/.codex/ai-change-implementation-prompt.md"
-printf 'stale flow from an older release\n' >"$retired_file"
-set +e
-with_home "$targets_home" bash "$targets_repo/scripts/distribute.sh" --check >"$TEST_ROOT/check-retired.out" 2>&1
-check_retired_code=$?
-set -e
-if [[ "$check_retired_code" -ne 0 ]] && grep -q '未退役' "$TEST_ROOT/check-retired.out"; then
-  printf 'PASS check-detects-lingering-retired-path\n'
-else
-  printf 'FAIL check-detects-lingering-retired-path (exit %s)\n' "$check_retired_code" >&2
-  cat "$TEST_ROOT/check-retired.out" >&2
-  failures=$((failures + 1))
-fi
-
-run_distribution "$targets_repo" "$targets_home"
-if [[ ! -e "$retired_file" ]] &&
-  grep -rqs 'stale flow from an older release' "$targets_home/.codex/.gov-backup/retired-"*; then
-  printf 'PASS retired-path-removed-with-backup\n'
-else
-  printf 'FAIL retired-path-removed-with-backup\n' >&2
-  failures=$((failures + 1))
-fi
-
-# 8. --check 一致性、手工修改和旧版本号检测。
+# 7. --check 一致性、手工修改和旧版本号检测。
 with_home "$targets_home" bash "$targets_repo/scripts/distribute.sh" --check >"$TEST_ROOT/check-clean.out" 2>&1
 check_clean_code=$?
 if [[ "$check_clean_code" -eq 0 ]]; then
@@ -397,11 +351,9 @@ git -C "$oversize_repo" add global/AGENTS.md VERSION
 git -C "$oversize_repo" commit -q -m "chore: oversize rules"
 expect_failure reject-oversize-agents-bytes run_distribution "$oversize_repo" "$oversize_home"
 
-# 10. 快照保留上限裁剪旧快照，且保留 retired-* 备份。
+# 9. 快照保留上限裁剪旧快照。
 retain_repo="$(make_fixture retain)"
 retain_home="$TEST_ROOT/retain/home"
-mkdir -p "$retain_home/.codex"
-printf 'old retired\n' >"$retain_home/.codex/ai-change-implementation-prompt.md"
 for step in 1 2 3 4; do
   printf 'global rules step %s\n' "$step" >"$retain_repo/global/AGENTS.md"
   printf '1.0.%s\n' "$step" >"$retain_repo/VERSION"
@@ -410,11 +362,10 @@ for step in 1 2 3 4; do
   AGENT_GOVERNANCE_BACKUP_KEEP=2 run_distribution "$retain_repo" "$retain_home"
 done
 kept_count="$(ls -1d "$retain_home/.codex/.gov-backup"/[0-9]*/ 2>/dev/null | wc -l | tr -d ' ')"
-retired_kept="$(ls -1d "$retain_home/.codex/.gov-backup"/retired-*/ 2>/dev/null | wc -l | tr -d ' ')"
-if [[ "$kept_count" -eq 2 && "$retired_kept" -ge 1 ]]; then
-  printf 'PASS backup-retention-prunes-old-and-keeps-retired\n'
+if [[ "$kept_count" -eq 2 ]]; then
+  printf 'PASS backup-retention-prunes-old\n'
 else
-  printf 'FAIL backup-retention-prunes-old-and-keeps-retired (kept=%s retired=%s)\n' "$kept_count" "$retired_kept" >&2
+  printf 'FAIL backup-retention-prunes-old (kept=%s)\n' "$kept_count" >&2
   failures=$((failures + 1))
 fi
 
@@ -459,70 +410,99 @@ else
   printf 'SKIP posix-parent-and-version-symlink-tests (windows)\n'
 fi
 
-# 12. 旧全局 core.hooksPath 迁移（含绝对路径与字面 ~/ 写法）。
-mount_repo="$(make_fixture mount)"
-mount_home="$TEST_ROOT/mount/home"
-run_distribution "$mount_repo" "$mount_home"
-with_home "$mount_home" git config --global core.hooksPath "$mount_home/.codex/git-hooks"
-expect_failure check-rejects-legacy-hook-override with_home "$mount_home" \
-  bash "$mount_repo/scripts/distribute.sh" --check
-run_distribution "$mount_repo" "$mount_home"
-if with_home "$mount_home" git config --global --get core.hooksPath >/dev/null 2>&1; then
-  printf 'FAIL legacy-global-override-survived-migration\n' >&2
-  failures=$((failures + 1))
-else
-  printf 'PASS legacy-global-override-migrated\n'
-fi
-
-# 字面 ~/.codex/git-hooks/（带波浪线与尾斜杠）也必须自动迁移成功。
-with_home "$mount_home" git config --global core.hooksPath '~/.codex/git-hooks/'
-run_distribution "$mount_repo" "$mount_home"
-if with_home "$mount_home" git config --global --get core.hooksPath >/dev/null 2>&1; then
-  printf 'FAIL legacy-tilde-override-survived-migration\n' >&2
-  failures=$((failures + 1))
-else
-  printf 'PASS legacy-tilde-override-migrated\n'
-fi
-
-native_repo="$TEST_ROOT/native-repo"
-with_home "$mount_home" git init -q "$native_repo"
-mkdir -p "$native_repo/.git/hooks"
-printf '#!/usr/bin/env bash\nprintf "native prepare hook\\n"\nexit 17\n' >"$native_repo/.git/hooks/prepare-commit-msg"
-chmod +x "$native_repo/.git/hooks/prepare-commit-msg"
-status=0
-with_home "$mount_home" git -C "$native_repo" hook run prepare-commit-msg -- COMMIT_EDITMSG message \
-  >"$TEST_ROOT/native-hook.out" 2>&1 || status=$?
-if [[ "$status" == 17 ]] && grep -q 'native prepare hook' "$TEST_ROOT/native-hook.out"; then
-  printf 'PASS git-selects-native-project-hook-after-migration\n'
-else
-  printf 'FAIL git-selects-native-project-hook-after-migration\n' >&2
-  failures=$((failures + 1))
-fi
-
-included="$mount_home/included.gitconfig"
-with_home "$mount_home" git config --file "$included" core.hooksPath "$mount_home/custom-hooks"
-with_home "$mount_home" git config --global include.path "$included"
-run_distribution "$mount_repo" "$mount_home"
-[[ "$(with_home "$mount_home" git config --global --includes --get core.hooksPath)" == "$mount_home/custom-hooks" ]]
-with_home "$mount_home" git config --file "$included" core.hooksPath '~/.codex/git-hooks'
-expect_failure check-rejects-included-legacy-alias with_home "$mount_home" \
-  bash "$mount_repo/scripts/distribute.sh" --check
-[[ "$(with_home "$mount_home" git config --file "$included" --get core.hooksPath)" == '~/.codex/git-hooks' ]]
-with_home "$mount_home" git config --global --unset include.path
-if [[ "$native_windows" == 0 ]]; then
-  chmod -x "$mount_home/.codex/git-hooks/commit-msg"
-  expect_failure check-rejects-missing-executable-bit with_home "$mount_home" \
-    bash "$mount_repo/scripts/distribute.sh" --check
-else
-  printf 'SKIP check-rejects-missing-executable-bit (windows)\n'
-fi
-
+# 11. 受损快照拒绝回滚且保留当前文件。
 latest_backup="$(ls -1d "$rollback_home/.codex/.gov-backup"/[0-9]*/ | LC_ALL=C sort | tail -1)"
 expected_sentinel='preserve on damaged rollback'
 printf '%s\n' "$expected_sentinel" >"$rollback_home/.codex/AGENTS.md"
 rm -f "$latest_backup/1"
 expect_failure reject-incomplete-backup with_home "$rollback_home" bash "$rollback_repo/scripts/distribute.sh" --rollback
 [[ "$(<"$rollback_home/.codex/AGENTS.md")" == "$expected_sentinel" ]]
+
+# 13. run_local_checks 隔离宿主机全局 Git 配置、关闭 stdin、输出进度并清理临时文件；失败时拒绝分发。
+checks_repo="$(make_fixture local-checks)"
+checks_home="$TEST_ROOT/local-checks/home"
+checks_tmp="$TEST_ROOT/local-checks/tmp"
+mkdir -p "$checks_home" "$checks_tmp"
+cat >"$checks_repo/tests/check-hook.sh" <<'SUITE'
+#!/usr/bin/env bash
+set -euo pipefail
+probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/agent-governance-probe.XXXXXX")"
+trap 'rm -rf "$probe_dir"' EXIT
+git init -q "$probe_dir"
+git -C "$probe_dir" config user.name "Probe User"
+git -C "$probe_dir" config user.email "probe@example.invalid"
+# 不得继承宿主机全局 commit.gpgsign / core.hooksPath，且临时仓提交必须成功。
+if git -C "$probe_dir" config --get commit.gpgsign >/dev/null 2>&1; then
+  printf 'leaked commit.gpgsign\n' >&2
+  exit 1
+fi
+if git -C "$probe_dir" config --get core.hooksPath >/dev/null 2>&1; then
+  printf 'leaked core.hooksPath\n' >&2
+  exit 1
+fi
+git -C "$probe_dir" commit --allow-empty -q -m "chore: isolated probe"
+# stdin 必须已关闭，防止子进程等待终端输入。
+if read -r _; then
+  printf 'stdin was not closed\n' >&2
+  exit 1
+fi
+SUITE
+cat >"$checks_repo/tests/check-rule-paths.sh" <<'SUITE'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+SUITE
+printf '1.0.1\n' >"$checks_repo/VERSION"
+git -C "$checks_repo" add tests/check-hook.sh tests/check-rule-paths.sh VERSION
+git -C "$checks_repo" commit -q -m "chore: add local check probes"
+
+poison_gitconfig="$TEST_ROOT/local-checks/poison.gitconfig"
+cat >"$poison_gitconfig" <<'CFG'
+[commit]
+	gpgsign = true
+[gpg]
+	program = /nonexistent-gpg-program
+[core]
+	hooksPath = /nonexistent-global-hooks
+CFG
+poison_gitconfig_env="$poison_gitconfig"
+if [[ "$native_windows" == 1 ]]; then
+  poison_gitconfig_env="$(cygpath -w "$poison_gitconfig")"
+fi
+
+if printf 'should-not-be-read\n' |
+  with_home "$checks_home" env TMPDIR="$checks_tmp" GIT_CONFIG_GLOBAL="$poison_gitconfig_env" \
+    bash "$checks_repo/scripts/distribute.sh" >"$checks_home/distribute.out" 2>&1 &&
+  grep -q '正在运行本地检查（2 个测试套件' "$checks_home/distribute.out" &&
+  grep -q '✓ 本地检查通过（2 个测试套件 + 脚本语法）' "$checks_home/distribute.out" &&
+  [[ -z "$(ls -A "$checks_tmp" 2>/dev/null)" ]]; then
+  printf 'PASS local-checks-isolate-git-config-stdin-and-show-progress\n'
+else
+  printf 'FAIL local-checks-isolate-git-config-stdin-and-show-progress\n' >&2
+  cat "$checks_home/distribute.out" >&2 || true
+  failures=$((failures + 1))
+fi
+
+# 本地检查失败时必须中止分发，且清理临时 gitconfig。
+checks_fail_home="$TEST_ROOT/local-checks/fail-home"
+mkdir -p "$checks_fail_home"
+printf '#!/usr/bin/env bash\nexit 1\n' >"$checks_repo/tests/check-rule-paths.sh"
+printf '1.0.2\n' >"$checks_repo/VERSION"
+git -C "$checks_repo" add tests/check-rule-paths.sh VERSION
+git -C "$checks_repo" commit -q -m "chore: make probe fail"
+if with_home "$checks_fail_home" env TMPDIR="$checks_tmp" \
+    bash "$checks_repo/scripts/distribute.sh" >"$checks_fail_home/distribute.out" 2>&1; then
+  printf 'FAIL local-checks-failure-blocks-distribution\n' >&2
+  failures=$((failures + 1))
+elif grep -q '错误: 本地检查失败，拒绝分发: tests/check-rule-paths.sh' "$checks_fail_home/distribute.out" &&
+  [[ ! -e "$checks_fail_home/.codex/AGENTS.md" ]] &&
+  [[ -z "$(ls -A "$checks_tmp" 2>/dev/null)" ]]; then
+  printf 'PASS local-checks-failure-blocks-distribution\n'
+else
+  printf 'FAIL local-checks-failure-blocks-distribution\n' >&2
+  cat "$checks_fail_home/distribute.out" >&2 || true
+  failures=$((failures + 1))
+fi
 
 if (( failures > 0 )); then
   printf '%d distribution checks failed.\n' "$failures" >&2

@@ -13,7 +13,7 @@
 #   3. 门禁：本地仓不落后 origin（有 remote 时）。origin 存在但 fetch 失败一律失败关闭，
 #      绝不「装本地旧内容还显示已是最新」
 #   4. 安装前校验受管目标类型、父目录和冲突，并阻止并行分发
-#   5. 安装前对全部受管路径 + .gov-version 做一次整组快照，内容一致且无退役残留时跳过
+#   5. 安装前对全部受管路径 + .gov-version 做一次整组快照，内容一致时跳过
 #   6. 绝不触碰 settings.json / settings.local.json / 个人 memory / auth / token
 set -euo pipefail
 
@@ -35,7 +35,6 @@ TMP_BASE="${TMPDIR:-/tmp}"
 TMP_BASE="${TMP_BASE%/}"
 PREFIX="$DEVICE_HOME/.codex"
 CANONICAL_AGENTS="$PREFIX/AGENTS.md"
-HOOKS_DIR="$PREFIX/git-hooks"
 BACKUP_ROOT="$PREFIX/.gov-backup"
 WORKBUDDY_RULE_NAME="agent-governance.md"
 
@@ -107,10 +106,6 @@ WORK_SHARE_DIR="$DEVICE_HOME/Documents/work"
 COPY_SOURCES=(
   "global/AGENTS.md|$PREFIX/AGENTS.md"
   "scripts/check-commit-attribution.sh|$PREFIX/check-commit-attribution.sh"
-  "global/git-hooks/commit-msg|$HOOKS_DIR/commit-msg"
-  "global/git-hooks/_chain|$HOOKS_DIR/_chain"
-  "global/git-hooks/pre-commit|$HOOKS_DIR/pre-commit"
-  "global/git-hooks/pre-push|$HOOKS_DIR/pre-push"
   "global/AGENTS.md|$WORK_SHARE_DIR/CLAUDE.md"
   # Copilot CLI 的个人级指令只认这个文件名，不读 AGENTS.md，因此单独分发一份内容副本。
   "global/AGENTS.md|$COPILOT_DIR/copilot-instructions.md"
@@ -139,13 +134,6 @@ fi
 GLOBAL_RULE_MAX_BYTES=24000
 WORKBUDDY_RULE_MAX_CHARS=40000
 
-# 已退役的受管路径：曾由本仓分发，现已从清单移除。
-# 不做退役清理会留下孤儿副本——它不再被比对、不再被更新，却仍在被工具读取。
-# 退役路径刻意不进 MANAGED_PATHS，分发时移至独立的 retired-<时间戳> 备份目录（可人工恢复）。
-RETIRED_PATHS=(
-  "$PREFIX/ai-change-implementation-prompt.md"
-)
-
 MANAGED_PATHS=()
 for entry in "${COPY_SOURCES[@]}"; do
   MANAGED_PATHS+=("${entry#*|}")
@@ -160,18 +148,37 @@ MANAGED_PATHS+=("$WORKBUDDY_RULE_PATH" "$PREFIX/.gov-version")
 lock_dir=
 workbuddy_tmp=
 check_tmp=
+check_git_config=
+check_pids=()
 staged_file=
 pending_snapshot=
 release_root=
 cleanup() {
+  local pid
+  if (( ${#check_pids[@]} > 0 )); then
+    for pid in "${check_pids[@]}"; do
+      [[ -n "$pid" ]] || continue
+      if command -v pkill >/dev/null 2>&1; then
+        pkill -P "$pid" 2>/dev/null || true
+      fi
+      kill "$pid" 2>/dev/null || true
+    done
+    for pid in "${check_pids[@]}"; do
+      [[ -n "$pid" ]] || continue
+      wait "$pid" 2>/dev/null || true
+    done
+  fi
   [[ -z "$staged_file" ]] || rm -f "$staged_file"
   [[ -z "$workbuddy_tmp" ]] || rm -f "$workbuddy_tmp"
   [[ -z "$check_tmp" ]] || rm -f "$check_tmp"
+  [[ -z "$check_git_config" ]] || rm -f "$check_git_config"
   [[ -z "$pending_snapshot" ]] || rm -rf "$pending_snapshot"
   [[ -z "$release_root" ]] || rm -rf "$release_root"
   [[ -z "$lock_dir" ]] || rmdir "$lock_dir" 2>/dev/null || true
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 count_utf8_chars() {
   local file="$1"
@@ -272,14 +279,11 @@ acquire_lock() {
 }
 
 install_copy() {
-  local source="$1" path="$2" executable="${3:-0}"
+  local source="$1" path="$2"
   validate_target "$path" 0 || return 1
   mkdir -p "$(dirname "$path")"
   staged_file="$(mktemp "$(dirname "$path")/.governance.XXXXXX")"
   cp -p "$source" "$staged_file"
-  if [[ "$executable" == 1 ]]; then
-    chmod +x "$staged_file"
-  fi
   mv -f "$staged_file" "$path"
   staged_file=
 }
@@ -296,7 +300,7 @@ USAGE
 
 # --- 一致性校验 -----------------------------------------------------------
 # 只比较，不安装。用于回答「本机副本是否还等于治理仓源文件」：
-# 手工改过本机副本、存在未清理退役路径或某个工具入口仍是旧版时，这里会列出来并退出 1。
+# 手工改过本机副本或某个工具入口仍是旧版时，这里会列出来并退出 1。
 check_installed() {
   local drifts=0
   local entry src dest
@@ -309,9 +313,6 @@ check_installed() {
       drifts=$((drifts + 1))
     elif ! cmp -s "$src" "$dest"; then
       printf '不一致 %s  ←  %s\n' "$dest" "${entry%%|*}" >&2
-      drifts=$((drifts + 1))
-    elif [[ "$dest" == "$HOOKS_DIR/"* && ! -x "$dest" ]]; then
-      printf '不可执行 %s\n' "$dest" >&2
       drifts=$((drifts + 1))
     fi
   done
@@ -338,15 +339,6 @@ check_installed() {
   rm -f "$check_tmp"
   check_tmp=
 
-  if (( ${#RETIRED_PATHS[@]} > 0 )); then
-    for entry in "${RETIRED_PATHS[@]}"; do
-      if [[ -e "$entry" || -L "$entry" ]]; then
-        printf '未退役 %s\n' "$entry" >&2
-        drifts=$((drifts + 1))
-      fi
-    done
-  fi
-
   local latest installed=""
   latest="$(tr -d '[:space:]' <"$VERSION_FILE")"
   [[ -f "$PREFIX/.gov-version" ]] && installed="$(tr -d '[:space:]' <"$PREFIX/.gov-version")"
@@ -355,15 +347,11 @@ check_installed() {
     drifts=$((drifts + 1))
   fi
 
-  local legacy_ok=1
-  check_no_legacy_override || legacy_ok=0
   if (( drifts > 0 )); then
     printf '==> %d 处与治理仓 %s 不一致。修复：bash scripts/distribute.sh\n' "$drifts" "$latest" >&2
     return 1
   fi
   printf '==> 全部受管副本与当前工作树 %s 一致。\n' "$latest"
-  [[ "$legacy_ok" == 1 ]] || return 1
-  printf '==> Git 保留原有钩子选择。归属门禁须在各项目及其 CI 中验证。\n'
 }
 
 list_targets() {
@@ -379,12 +367,6 @@ list_targets() {
   fi
   printf '  workbuddy %s  ←  global/AGENTS.md + frontmatter\n' "$WORKBUDDY_RULE_PATH"
   printf '  state     %s  （版本记录，供门禁与回滚使用）\n' "$PREFIX/.gov-version"
-  if (( ${#RETIRED_PATHS[@]} > 0 )); then
-    for entry in "${RETIRED_PATHS[@]}"; do
-      printf '  retire    %s  （旧副本存在时迁至备份目录并清理）\n' "$entry"
-    done
-  fi
-  printf '  git       检测并移除直接配置的旧治理目录覆盖 %s\n' "$HOOKS_DIR"
   printf '\n长度门禁: AGENTS.md ≤ %s 字节；WorkBuddy 规则 ≤ %s 字符（超限会被工具静默丢弃）\n' \
     "$GLOBAL_RULE_MAX_BYTES" "$WORKBUDDY_RULE_MAX_CHARS"
 }
@@ -394,11 +376,6 @@ is_allowed_rollback_path() {
   for item in "${MANAGED_PATHS[@]}"; do
     [[ "$candidate" == "$item" ]] && return 0
   done
-  if (( ${#RETIRED_PATHS[@]} > 0 )); then
-    for item in "${RETIRED_PATHS[@]}"; do
-      [[ "$candidate" == "$item" ]] && return 0
-    done
-  fi
   return 1
 }
 
@@ -420,7 +397,6 @@ rollback() {
     return 1
   fi
   acquire_lock
-  check_no_legacy_override
   local latest
   latest="$(ls -1d "$BACKUP_ROOT"/[0-9]*/ 2>/dev/null | LC_ALL=C sort | tail -1 || true)"
   latest="${latest%/}"
@@ -464,7 +440,7 @@ rollback() {
       absent) ;;
       *) printf '错误: 快照状态无效: %s\n' "$state" >&2; return 1 ;;
     esac
-    # 写入前即逐项校验目标类型与父目录（含 RETIRED_PATHS），防止半途失败导致半回滚。
+    # 写入前即逐项校验目标类型与父目录，防止半途失败导致半回滚。
     if is_link_target_path "$dest"; then
       validate_target "$dest" 1 || return 1
     else
@@ -475,8 +451,8 @@ rollback() {
     count=$((count + 1))
   done <"$latest/manifest"
 
-  if (( count == 0 )); then
-    printf '错误: 快照清单为空: %s\n' "$latest/manifest" >&2
+  if (( count != ${#MANAGED_PATHS[@]} )); then
+    printf '错误: 快照清单与当前受管目标不匹配（%d / %d）: %s\n' "$count" "${#MANAGED_PATHS[@]}" "$latest/manifest" >&2
     return 1
   fi
 
@@ -501,48 +477,102 @@ rollback() {
     fi
   done
 
-  local managed_item covered
-  for managed_item in "${MANAGED_PATHS[@]}"; do
-    covered=0
-    for seen_item in "${manifest_dests[@]}"; do
-      [[ "$seen_item" == "$managed_item" ]] && { covered=1; break; }
-    done
-    if (( covered == 0 )); then
-      printf '    注意: 旧快照未覆盖新增目标 %s，保持现状。\n' "$managed_item"
-    fi
-  done
-
   printf '==> 回滚完成（快照 %s）。\n' "$(basename "$latest")"
 }
 
 # --- 门禁 -----------------------------------------------------------------
 run_local_checks() {
-  local suite
+  local suite file index total git_config_env repo_safe_dir
   local ran=0
-  local file
+  # 按常见耗时由短到长排列，便于并行等待时尽快打印进度。
   local -a suites=(
-    tests/check-commit-attribution.sh
-    tests/check-hook.sh
-    tests/check-global-hook.sh
-    tests/check-version-bump.sh
     tests/check-rule-paths.sh
     tests/check-bootstrap.sh
+    tests/check-hook.sh
     tests/sync-project-governance.sh
-    tests/init-project-governance.sh
+    tests/check-version-bump.sh
+    tests/check-commit-attribution.sh
     tests/skills.sh
+    tests/init-project-governance.sh
   )
+  local -a active_suites=()
+  local -a failed_suites=()
 
   for suite in "${suites[@]}"; do
     [[ -f "$REPO_DIR/$suite" ]] || continue
-    if ! bash "$REPO_DIR/$suite" >/dev/null 2>&1; then
-      printf '错误: 本地检查失败，拒绝分发: %s\n' "$suite" >&2
-      printf '      （单独运行可看详细输出: bash %s）\n' "$suite" >&2
-      return 1
-    fi
-    ran=$((ran + 1))
+    active_suites+=("$suite")
   done
 
-  for file in "$REPO_DIR"/scripts/*.sh "$REPO_DIR"/.githooks/* "$REPO_DIR"/global/git-hooks/*; do
+  total="${#active_suites[@]}"
+  if (( total > 0 )); then
+    # 隔离宿主机全局/系统 Git 配置并关闭 stdin，防止 commit.gpgsign、全局 hooksPath
+    # 或交互式签名提示在测试临时仓里静默阻塞或误伤本地检查；同时为当前仓库放行 safe.directory。
+    check_git_config="$(mktemp "$TMP_BASE/agent-governance-gitconfig.XXXXXX")"
+    git_config_env="$check_git_config"
+    if [[ "$native_windows" == 1 ]]; then
+      git_config_env="$(cygpath -w "$check_git_config")"
+    fi
+    repo_safe_dir="$(git -C "$REPO_DIR" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$REPO_DIR")"
+    if [[ "$native_windows" == 1 ]]; then
+      repo_safe_dir="$(cygpath -m "$repo_safe_dir")"
+    fi
+    git config --file "$git_config_env" --add safe.directory "$repo_safe_dir"
+
+    if [[ "$native_windows" == 1 ]]; then
+      printf '    正在运行本地检查（%d 个测试套件）…\n' "$total"
+      for index in "${!active_suites[@]}"; do
+        suite="${active_suites[$index]}"
+        printf '      [%d/%d] %s\n' "$((index + 1))" "$total" "$suite"
+        if ! (
+          unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE \
+            GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+          export GIT_CONFIG_GLOBAL="$git_config_env" GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
+          exec bash "$REPO_DIR/$suite"
+        ) </dev/null >/dev/null 2>&1; then
+          failed_suites+=("$suite")
+          break
+        fi
+        ran=$((ran + 1))
+      done
+    else
+      printf '    正在运行本地检查（%d 个测试套件，并行）…\n' "$total"
+      check_pids=()
+      for suite in "${active_suites[@]}"; do
+        (
+          unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE \
+            GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+          export GIT_CONFIG_GLOBAL="$git_config_env" GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
+          exec bash "$REPO_DIR/$suite"
+        ) </dev/null >/dev/null 2>&1 &
+        check_pids+=("$!")
+      done
+      for index in "${!active_suites[@]}"; do
+        suite="${active_suites[$index]}"
+        if wait "${check_pids[$index]}"; then
+          ran=$((ran + 1))
+          printf '      [%d/%d] ✓ %s\n' "$((index + 1))" "$total" "$suite"
+        else
+          failed_suites+=("$suite")
+          printf '      [%d/%d] ✗ %s\n' "$((index + 1))" "$total" "$suite" >&2
+        fi
+        check_pids[$index]=""
+      done
+      check_pids=()
+    fi
+
+    rm -f "$check_git_config"
+    check_git_config=
+
+    if (( ${#failed_suites[@]} > 0 )); then
+      for suite in "${failed_suites[@]}"; do
+        printf '错误: 本地检查失败，拒绝分发: %s\n' "$suite" >&2
+        printf '      （单独运行可看详细输出: bash %s）\n' "$suite" >&2
+      done
+      return 1
+    fi
+  fi
+
+  for file in "$REPO_DIR"/scripts/*.sh "$REPO_DIR"/.githooks/*; do
     [[ -f "$file" ]] || continue
     if ! bash -n "$file" 2>/dev/null; then
       printf '错误: 语法检查失败，拒绝分发: %s\n' "$file" >&2
@@ -587,70 +617,6 @@ check_remote_freshness() {
   fi
 
   return 0
-}
-
-# --- 迁移旧版全局钩子配置 --------------------------------------------------
-# 只从直接全局配置中删除旧版分发自己写入的字面值（含 ~ 写法或尾斜杠）；包含文件和其他配置保持原状。
-configured_hooks_path() {
-  local value status
-  if value="$(git config --global --includes --path --get core.hooksPath)"; then
-    printf '%s\n' "$value"
-  else
-    status=$?
-    [[ "$status" == 1 ]] || return "$status"
-    if value="$(git config --system --includes --path --get core.hooksPath)"; then
-      printf '%s\n' "$value"
-    else
-      status=$?
-      [[ "$status" == 1 ]] || return "$status"
-    fi
-  fi
-}
-
-normalize_hooks_value() {
-  local val="$1"
-  val="${val%$'\r'}"
-  if [[ "$val" == "~" ]]; then
-    val="$DEVICE_HOME"
-  elif [[ "$val" == "~/"* ]]; then
-    val="$DEVICE_HOME/${val#\~/}"
-  elif [[ "$native_windows" == 1 && "$val" == *\\* || ( "$native_windows" == 1 && "$val" =~ ^[A-Za-z]: ) ]]; then
-    val="$(cygpath -au "$val")"
-  fi
-  printf '%s\n' "${val%/}"
-}
-
-check_no_legacy_override() {
-  local path norm
-  path="$(configured_hooks_path)" || return 1
-  [[ -n "$path" ]] || return 0
-  norm="$(normalize_hooks_value "$path")"
-  if [[ "$norm" == "$HOOKS_DIR" || ( -n "$norm" && "$norm" -ef "$HOOKS_DIR" ) ]]; then
-    printf '错误: Git 仍全局覆盖为旧治理目录 %s，项目原生钩子会受影响。\n' "$path" >&2
-    printf '直接旧配置可由分发迁移；若来自包含文件或系统配置，请在对应来源处理。\n' >&2
-    return 1
-  fi
-}
-
-remove_legacy_override() {
-  local direct status raw norm removed=0
-  if direct="$(git config --global --no-includes --get-all core.hooksPath)"; then
-    while IFS= read -r raw; do
-      [[ -n "$raw" ]] || continue
-      norm="$(normalize_hooks_value "$raw")"
-      if [[ "$norm" == "$HOOKS_DIR" || ( -n "$norm" && "$norm" -ef "$HOOKS_DIR" ) ]]; then
-        git config --global --fixed-value --unset-all core.hooksPath "$raw"
-        removed=1
-      fi
-    done <<<"$direct"
-    if (( removed == 1 )); then
-      printf '    已移除旧治理目录的全局覆盖。各项目需验证自己的提交归属检查。\n'
-    fi
-  else
-    status=$?
-    [[ "$status" == 1 ]] || return "$status"
-  fi
-  check_no_legacy_override
 }
 
 # --- 内容生成 -------------------------------------------------------------
@@ -704,35 +670,6 @@ prune_old_backups() {
     dir="${snapshots[$i]}"
     [[ -d "$dir" && ! -L "$dir" ]] || continue
     rm -rf "$dir"
-  done
-}
-
-# --- 退役路径清理 ---------------------------------------------------------
-# 删除不再受管的旧分发副本。退役路径刻意不进 MANAGED_PATHS，移到独立的 retired 目录，可人工恢复。
-remove_retired_paths() {
-  local -a retired=()
-  local path
-  if (( ${#RETIRED_PATHS[@]} > 0 )); then
-    for path in "${RETIRED_PATHS[@]}"; do
-      [[ -e "$path" || -L "$path" ]] || continue
-      retired+=("$path")
-    done
-  fi
-  (( ${#retired[@]} > 0 )) || return 0
-
-  local ts sequence=0 backup_dir
-  ts="$(date +%Y%m%d-%H%M%S)"
-  while :; do
-    backup_dir="$(printf '%s/retired-%s-%04d' "$BACKUP_ROOT" "$ts" "$sequence")"
-    [[ ! -e "$backup_dir" && ! -L "$backup_dir" ]] && break
-    sequence=$((sequence + 1))
-  done
-  mkdir -p "$backup_dir" || return 1
-  for path in "${retired[@]}"; do
-    local name
-    name="$(printf '%s' "$path" | tr '/' '_')"
-    mv "$path" "$backup_dir/$name" || return 1
-    printf '    已退役: %s（备份于 %s）\n' "$path" "${backup_dir#"$DEVICE_HOME"/}"
   done
 }
 
@@ -829,8 +766,7 @@ main() {
   for entry in "${COPY_SOURCES[@]}"; do
     local src="$release_root/${entry%%|*}"
     dest="${entry#*|}"
-    if [[ -f "$dest" ]] && cmp -s "$src" "$dest" &&
-      [[ "$dest" != "$HOOKS_DIR/"* || -x "$dest" ]]; then
+    if [[ -f "$dest" ]] && cmp -s "$src" "$dest"; then
       continue
     fi
     plan_copy_src+=("$src")
@@ -852,17 +788,7 @@ main() {
     need_workbuddy=1
   fi
 
-  remove_legacy_override
-
-  # 退役清理要在「无需更新」短路之前：孤儿副本本身就是需要处理的状态。
-  local retired_count=0
-  if (( ${#RETIRED_PATHS[@]} > 0 )); then
-    for entry in "${RETIRED_PATHS[@]}"; do
-      [[ -e "$entry" || -L "$entry" ]] && retired_count=$((retired_count + 1))
-    done
-  fi
-
-  if (( ${#plan_copy_dest[@]} == 0 && ${#plan_link_dest[@]} == 0 && need_workbuddy == 0 && retired_count == 0 )) && cmp -s "$PREFIX/.gov-version" "$VERSION_FILE"; then
+  if (( ${#plan_copy_dest[@]} == 0 && ${#plan_link_dest[@]} == 0 && need_workbuddy == 0 )) && cmp -s "$PREFIX/.gov-version" "$VERSION_FILE"; then
     printf '==> 无需更新（已是 %s）。\n' "$latest"
     printf '    settings.json / settings.local.json / 个人 memory / auth 属个人层，未被触碰。\n'
     return 0
@@ -881,13 +807,11 @@ main() {
   pending_snapshot=
   printf '    已快照当前状态: %s\n' "${snapshot_dir#"$DEVICE_HOME"/}"
 
-  local index executable
+  local index
   if (( ${#plan_copy_dest[@]} > 0 )); then
     for index in "${!plan_copy_dest[@]}"; do
       dest="${plan_copy_dest[$index]}"
-      executable=0
-      [[ "$dest" != "$HOOKS_DIR/"* ]] || executable=1
-      install_copy "${plan_copy_src[$index]}" "$dest" "$executable"
+      install_copy "${plan_copy_src[$index]}" "$dest"
       printf '    已安装: %s\n' "$dest"
     done
   fi
@@ -906,8 +830,6 @@ main() {
     install_copy "$workbuddy_tmp" "$WORKBUDDY_RULE_PATH"
     printf '    已安装: %s  (WorkBuddy 用户级规则，%s 字符)\n' "$WORKBUDDY_RULE_PATH" "$workbuddy_chars"
   fi
-
-  remove_retired_paths
 
   install_copy "$VERSION_FILE" "$PREFIX/.gov-version"
   prune_old_backups
