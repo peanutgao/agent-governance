@@ -18,7 +18,7 @@ esac
 
 # 1. 全部 Shell 脚本与钩子语法检查。
 syntax_ok=1
-for file in "$ROOT_DIR"/scripts/*.sh "$ROOT_DIR"/.githooks/* "$ROOT_DIR"/tests/*.sh; do
+for file in "$ROOT_DIR"/scripts/gov "$ROOT_DIR"/scripts/*.sh "$ROOT_DIR"/scripts/internal/*.sh "$ROOT_DIR"/.githooks/* "$ROOT_DIR"/tests/*.sh; do
   [[ -f "$file" ]] || continue
   if ! bash -n "$file" 2>&1; then
     printf '  syntax error: %s\n' "$file" >&2
@@ -31,7 +31,7 @@ done
 if "$py_cmd" -B - "$ROOT_DIR" <<'PY'
 import ast, pathlib, sys
 root = pathlib.Path(sys.argv[1])
-for rel in ("scripts/skills.py", "scripts/skills_store.py", "tests/skills.py"):
+for rel in ("scripts/internal/skills.py", "scripts/internal/skills_store.py", "scripts/internal/init_project_governance.py", "tests/skills.py"):
     path = root / rel
     ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
 PY
@@ -49,7 +49,7 @@ non_ascii = [b for b in raw if b >= 0x80]
 if non_ascii:
     raise SystemExit(f"bootstrap.ps1 contains {len(non_ascii)} non-ASCII byte(s)")
 text = raw.decode("ascii")
-for token in ("Resolve-LocalBootstrapScript", "Test-RuntimeReady", "VERSION", "install.sh"):
+for token in ("Resolve-LocalBootstrapScript", "Test-RuntimeReady", "VERSION", "$govScript", "'gov'"):
     if token not in text:
         raise SystemExit(f"bootstrap.ps1 missing required guard: {token}")
 PY
@@ -59,9 +59,9 @@ else
   fail bootstrap-ps1-ascii-and-guards
 fi
 
-# 4. install.sh / bootstrap.sh 参数错误必须失败关闭。
+# 4. gov install / bootstrap.sh 参数错误必须失败关闭。
 set +e
-bash "$ROOT_DIR/scripts/install.sh" --unknown >/dev/null 2>&1
+bash "$ROOT_DIR/scripts/gov" install --unknown >/dev/null 2>&1
 install_bad_code=$?
 bash "$ROOT_DIR/scripts/bootstrap.sh" --unknown >/dev/null 2>&1
 bootstrap_bad_code=$?

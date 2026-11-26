@@ -10,7 +10,7 @@
 2. **既有 AI 规则与冲突**：搜索所有 `AGENTS.md`、`AGENTS.override.md`、`CLAUDE.md`、`CLAUDE.local.md`、`CODEBUDDY.md`，识别可能遮蔽项目规则的祖先/本地文件。
 3. **既有文档与正式契约**：盘点已有的架构文档、Spec、ADR、OpenAPI/Proto/GraphQL/JSON Schema 与 PR 模板；**优先在入口链接复用既有文档，绝不复制第二套真源**。
 4. **真实构建与检查命令**：打开真实构建/CI 配置核实编译、测试、原生 Lint 命令，绝不根据文件存在与否猜测命令。
-5. **敏感与权限边界**：盘点凭据、生产配置、迁移目录与需要保护的依赖清单，确认后再增量补充 `<project>/AGENTS.md`（或最小接入 `scripts/init-project-governance.sh`）。
+5. **敏感与权限边界**：盘点凭据、生产配置、迁移目录与需要保护的依赖清单，确认后再增量补充 `<project>/AGENTS.md`（或最小接入 `bash scripts/gov project init`）。
 
 输出盘点结论时明确区分「已核实事实 / 合理推断 / 待确认」三栏并附真实文件路径。
 

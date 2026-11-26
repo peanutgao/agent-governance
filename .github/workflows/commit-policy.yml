@@ -18,10 +18,10 @@ jobs:
           fetch-depth: 0
 
       - name: Check version of this revision
-        run: bash scripts/check-version-bump.sh
+        run: bash scripts/gov check version
 
       - name: Check repo rule paths
-        run: bash scripts/check-rule-paths.sh
+        run: bash scripts/gov check paths
 
       - name: Reject AI/Bot commit attribution
         env:

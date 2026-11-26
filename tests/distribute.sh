@@ -41,7 +41,7 @@ make_fixture() {
   local name="$1"
   local repo="$TEST_ROOT/$name/repo"
 
-  mkdir -p "$repo/global" "$repo/.github" "$repo/.githooks" "$repo/scripts" "$repo/tests" "$repo/templates/project" "$repo/skills/local/ai-change-flow/references"
+  mkdir -p "$repo/global" "$repo/.github" "$repo/.githooks" "$repo/scripts/internal" "$repo/tests" "$repo/templates/project" "$repo/skills/local/ai-change-flow/references"
   git init -q "$repo"
   git -C "$repo" config user.name "Joseph Koh"
   git -C "$repo" config user.email "joseph@example.com"
@@ -57,10 +57,11 @@ make_fixture() {
   printf 'onboarding\n' >"$repo/onboarding.md"
   printf 'attribution checker\n' >"$repo/scripts/check-commit-attribution.sh"
   printf 'project template\n' >"$repo/templates/project/AI-GOVERNANCE.md"
-  printf 'project sync\n' >"$repo/scripts/sync-project-governance.sh"
-  cp "$ROOT_DIR/scripts/check-version-bump.sh" "$repo/scripts/check-version-bump.sh"
-  cp "$ROOT_DIR/scripts/check-rule-paths.sh" "$repo/scripts/check-rule-paths.sh"
-  cp "$ROOT_DIR/scripts/distribute.sh" "$repo/scripts/distribute.sh"
+  printf 'project sync\n' >"$repo/scripts/internal/sync-project-governance.sh"
+  cp "$ROOT_DIR/scripts/gov" "$repo/scripts/gov"
+  cp "$ROOT_DIR/scripts/internal/check-version-bump.sh" "$repo/scripts/internal/check-version-bump.sh"
+  cp "$ROOT_DIR/scripts/internal/check-rule-paths.sh" "$repo/scripts/internal/check-rule-paths.sh"
+  cp "$ROOT_DIR/scripts/internal/distribute.sh" "$repo/scripts/internal/distribute.sh"
   printf 'baseline tests\n' >"$repo/tests/placeholder.sh"
   printf '1.0.0\n' >"$repo/VERSION"
   printf '* text=auto eol=lf\n' >"$repo/.gitattributes"
@@ -75,7 +76,7 @@ run_distribution() {
   local repo="$1"
   local home="$2"
   mkdir -p "$home"
-  with_home "$home" bash "$repo/scripts/distribute.sh" >"$home/distribute.out" 2>&1
+  with_home "$home" bash "$repo/scripts/gov" distribute >"$home/distribute.out" 2>&1
 }
 
 expect_failure() {
@@ -174,7 +175,7 @@ printf '1.2.0\n' >"$rollback_repo/VERSION"
 git -C "$rollback_repo" add scripts/check-commit-attribution.sh VERSION
 git -C "$rollback_repo" commit -q -m "chore: release 1.2.0"
 run_distribution "$rollback_repo" "$rollback_home"
-with_home "$rollback_home" bash "$rollback_repo/scripts/distribute.sh" --rollback >"$rollback_home/rollback.out" 2>&1
+with_home "$rollback_home" bash "$rollback_repo/scripts/gov" distribute --rollback >"$rollback_home/rollback.out" 2>&1
 
 if [[ "$(<"$rollback_home/.codex/AGENTS.md")" == "$expected_agents" ]]; then
   printf 'PASS rollback-restores-agents-as-group\n'
@@ -203,7 +204,7 @@ printf '1.0.5\n' >"$subset_snap/1"
 printf '0\t%s\tpresent\n1\t%s\tpresent\n' \
   "$rollback_home/.codex/AGENTS.md" "$rollback_home/.codex/.gov-version" >"$subset_snap/manifest"
 expect_failure rollback-rejects-incomplete-manifest \
-  with_home "$rollback_home" bash "$rollback_repo/scripts/distribute.sh" --rollback
+  with_home "$rollback_home" bash "$rollback_repo/scripts/gov" distribute --rollback
 if [[ "$(<"$rollback_home/.codex/AGENTS.md")" == "$expected_agents" ]]; then
   printf 'PASS rollback-incomplete-manifest-preserves-agents\n'
 else
@@ -216,7 +217,7 @@ printf '0\t%s\tabsent\n' "$rollback_home/.claude/settings.json" >"$subset_snap/m
 mkdir -p "$rollback_home/.claude"
 printf '{"keep":true}\n' >"$rollback_home/.claude/settings.json"
 expect_failure rollback-rejects-unmanaged-path \
-  with_home "$rollback_home" bash "$rollback_repo/scripts/distribute.sh" --rollback
+  with_home "$rollback_home" bash "$rollback_repo/scripts/gov" distribute --rollback
 if [[ "$(<"$rollback_home/.claude/settings.json")" == '{"keep":true}' ]]; then
   printf 'PASS rollback-preserves-unmanaged-settings\n'
 else
@@ -231,7 +232,7 @@ if [[ "$native_windows" == 0 ]]; then
   rm -f "$rollback_home/.codex/check-commit-attribution.sh"
   ln -s "$rollback_home/.claude/settings.json" "$rollback_home/.codex/check-commit-attribution.sh"
   expect_failure rollback-prechecks-later-target-symlink \
-    with_home "$rollback_home" bash "$rollback_repo/scripts/distribute.sh" --rollback
+    with_home "$rollback_home" bash "$rollback_repo/scripts/gov" distribute --rollback
   rm -f "$rollback_home/.codex/check-commit-attribution.sh"
   printf '%s\n' "$expected_checker" >"$rollback_home/.codex/check-commit-attribution.sh"
   if [[ "$(<"$rollback_home/.codex/AGENTS.md")" == 'atomic sentinel' ]]; then
@@ -306,7 +307,7 @@ else
 fi
 
 # 7. --check 一致性、手工修改和旧版本号检测。
-with_home "$targets_home" bash "$targets_repo/scripts/distribute.sh" --check >"$TEST_ROOT/check-clean.out" 2>&1
+with_home "$targets_home" bash "$targets_repo/scripts/gov" distribute --check >"$TEST_ROOT/check-clean.out" 2>&1
 check_clean_code=$?
 if [[ "$check_clean_code" -eq 0 ]]; then
   printf 'PASS check-reports-clean-install\n'
@@ -318,7 +319,7 @@ fi
 
 printf '# hand edited\n' >>"$targets_home/.codex/AGENTS.md"
 set +e
-with_home "$targets_home" bash "$targets_repo/scripts/distribute.sh" --check >"$TEST_ROOT/check-drift.out" 2>&1
+with_home "$targets_home" bash "$targets_repo/scripts/gov" distribute --check >"$TEST_ROOT/check-drift.out" 2>&1
 check_drift_code=$?
 set -e
 if [[ "$check_drift_code" -ne 0 ]] && grep -q '不一致' "$TEST_ROOT/check-drift.out"; then
@@ -331,7 +332,7 @@ fi
 
 printf '0.9.0\n' >"$targets_home/.codex/.gov-version"
 set +e
-with_home "$targets_home" bash "$targets_repo/scripts/distribute.sh" --check >"$TEST_ROOT/check-version.out" 2>&1
+with_home "$targets_home" bash "$targets_repo/scripts/gov" distribute --check >"$TEST_ROOT/check-version.out" 2>&1
 check_version_code=$?
 set -e
 if [[ "$check_version_code" -ne 0 ]] && grep -q '版本' "$TEST_ROOT/check-version.out"; then
@@ -373,17 +374,17 @@ fi
 mkdir -p "$TEST_ROOT/unsafe-home"
 unsafe_home="$TEST_ROOT/unsafe-home"
 expect_failure reject-parent-traversal with_home "$unsafe_home" env DSH_HOME="$unsafe_home/../outside" \
-  bash "$targets_repo/scripts/distribute.sh" --list-targets
+  bash "$targets_repo/scripts/gov" distribute --list-targets
 expect_failure reject-copy-link-collision with_home "$unsafe_home" env DSH_HOME="$unsafe_home/.CODEX" \
-  bash "$targets_repo/scripts/distribute.sh" --list-targets
+  bash "$targets_repo/scripts/gov" distribute --list-targets
 expect_failure reject-nested-target with_home "$unsafe_home" env DSH_HOME="$unsafe_home/.codex/AGENTS.md" \
-  bash "$targets_repo/scripts/distribute.sh" --list-targets
+  bash "$targets_repo/scripts/gov" distribute --list-targets
 
 custom_env_home="$TEST_ROOT/custom-env-home"
 mkdir -p "$custom_env_home"
 if with_home "$custom_env_home" env CLAUDE_CONFIG_DIR="$custom_env_home/.custom-claude" \
   OPENCODE_CONFIG_DIR="$custom_env_home/.custom-opencode" \
-  bash "$targets_repo/scripts/distribute.sh" --list-targets >"$TEST_ROOT/custom-env.out" 2>&1 &&
+  bash "$targets_repo/scripts/gov" distribute --list-targets >"$TEST_ROOT/custom-env.out" 2>&1 &&
   grep -q "$custom_env_home/.custom-claude/CLAUDE.md" "$TEST_ROOT/custom-env.out" &&
   grep -q "$custom_env_home/.custom-opencode/AGENTS.md" "$TEST_ROOT/custom-env.out"; then
   printf 'PASS honors-custom-tool-config-dirs\n'
@@ -415,7 +416,7 @@ latest_backup="$(ls -1d "$rollback_home/.codex/.gov-backup"/[0-9]*/ | LC_ALL=C s
 expected_sentinel='preserve on damaged rollback'
 printf '%s\n' "$expected_sentinel" >"$rollback_home/.codex/AGENTS.md"
 rm -f "$latest_backup/1"
-expect_failure reject-incomplete-backup with_home "$rollback_home" bash "$rollback_repo/scripts/distribute.sh" --rollback
+expect_failure reject-incomplete-backup with_home "$rollback_home" bash "$rollback_repo/scripts/gov" distribute --rollback
 [[ "$(<"$rollback_home/.codex/AGENTS.md")" == "$expected_sentinel" ]]
 
 # 13. run_local_checks 隔离宿主机全局 Git 配置、关闭 stdin、输出进度并清理临时文件；失败时拒绝分发。
@@ -472,7 +473,7 @@ fi
 
 if printf 'should-not-be-read\n' |
   with_home "$checks_home" env TMPDIR="$checks_tmp" GIT_CONFIG_GLOBAL="$poison_gitconfig_env" \
-    bash "$checks_repo/scripts/distribute.sh" >"$checks_home/distribute.out" 2>&1 &&
+    bash "$checks_repo/scripts/gov" distribute >"$checks_home/distribute.out" 2>&1 &&
   grep -q '正在运行本地检查（2 个测试套件' "$checks_home/distribute.out" &&
   grep -q '✓ 本地检查通过（2 个测试套件 + 脚本语法）' "$checks_home/distribute.out" &&
   [[ -z "$(ls -A "$checks_tmp" 2>/dev/null)" ]]; then
@@ -491,7 +492,7 @@ printf '1.0.2\n' >"$checks_repo/VERSION"
 git -C "$checks_repo" add tests/check-rule-paths.sh VERSION
 git -C "$checks_repo" commit -q -m "chore: make probe fail"
 if with_home "$checks_fail_home" env TMPDIR="$checks_tmp" \
-    bash "$checks_repo/scripts/distribute.sh" >"$checks_fail_home/distribute.out" 2>&1; then
+    bash "$checks_repo/scripts/gov" distribute >"$checks_fail_home/distribute.out" 2>&1; then
   printf 'FAIL local-checks-failure-blocks-distribution\n' >&2
   failures=$((failures + 1))
 elif grep -q '错误: 本地检查失败，拒绝分发: tests/check-rule-paths.sh' "$checks_fail_home/distribute.out" &&

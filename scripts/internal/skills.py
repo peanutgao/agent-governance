@@ -17,7 +17,7 @@ sys.dont_write_bytecode = True
 from skills_store import Store, content_key, inside, lock_file, path_key, read_json
 
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[2]
 SOURCE_ROOT = REPO / "skills"
 TARGETS = {
     "codex": (None, ".agents/skills", ""),
@@ -362,7 +362,7 @@ def prune(skills, roots, store, state):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(prog="bash scripts/gov skills", description=__doc__)
     parser.add_argument("command", choices=("plan", "status", "sync", "prune", "rollback"))
     parser.add_argument("--home", type=Path, help="用于隔离验证的用户目录")
     parser.add_argument("--proxy", help="获取 GitHub 源时使用的 HTTP 或 SOCKS 代理")

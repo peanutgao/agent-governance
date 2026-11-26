@@ -113,7 +113,7 @@ main() {
 
   # 恢复调用方原有 umask，避免把 077 权限泄露给下游分发的共享入口（如 OrbStack work/CLAUDE.md）。
   umask "$orig_umask"
-  bash "$checkout/scripts/install.sh"
+  bash "$checkout/scripts/gov" install
 }
 
 main "$@"

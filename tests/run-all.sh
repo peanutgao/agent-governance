@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # 治理仓全部测试的唯一入口。CI 与本地都用它，避免「加了一个套件但没人跑」。
-# 注意：scripts/distribute.sh 的门禁刻意不调用本脚本（会递归），它自己维护
+# 注意：scripts/internal/distribute.sh 的门禁刻意不调用本脚本（会递归），它自己维护
 # 非递归的套件清单。
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -12,6 +12,7 @@ SUITES=(
   tests/check-version-bump.sh
   tests/check-rule-paths.sh
   tests/check-bootstrap.sh
+  tests/check-gov-cli.sh
   tests/distribute.sh
   tests/sync-project-governance.sh
   tests/init-project-governance.sh

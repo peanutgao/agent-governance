@@ -2,8 +2,8 @@
 # check-rule-paths.sh — 校验规则与文档中引用的路径仍然存在
 #
 # 用法:
-#   bash scripts/check-rule-paths.sh [--list]               # 默认：静态检查仓内相对路径引用（CI 安全）
-#   bash scripts/check-rule-paths.sh --installed [--list]   # 检查规则内 ~/ 与 $HOME/ 本机已分发路径
+#   bash scripts/gov check paths [--list]               # 默认：静态检查仓内相对路径引用（CI 安全）
+#   bash scripts/gov check paths --installed [--list]   # 检查规则内 ~/ 与 $HOME/ 本机已分发路径
 #
 # 背景：规则文件里的硬编码路径会随目录调整静默失效（context rot）。
 # 默认模式只校验仓库内路径，不依赖任何机器的 $HOME 安装状态，可直接跑在 CI 与新设备上；
@@ -12,7 +12,7 @@ set -euo pipefail
 
 _self="${BASH_SOURCE[0]:-}"
 [[ -f "$_self" ]] || _self="$0"
-REPO_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
+REPO_DIR="$(cd "$(dirname "$_self")/../.." && pwd)"
 cd "$REPO_DIR"
 
 # 被检查的规则与文档源（默认静态模式）。
@@ -62,7 +62,7 @@ mode="repo"
 list_only=0
 
 usage() {
-  printf '用法: %s [--installed] [--list]\n' "$0" >&2
+  printf '用法: bash scripts/gov check paths [--installed] [--list]\n' >&2
 }
 
 while [[ "$#" -gt 0 ]]; do

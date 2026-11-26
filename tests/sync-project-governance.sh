@@ -3,7 +3,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT="$ROOT_DIR/scripts/sync-project-governance.sh"
+SCRIPT="$ROOT_DIR/scripts/internal/sync-project-governance.sh"
+GOV="$ROOT_DIR/scripts/gov"
 TMP_BASE="${TMPDIR:-/tmp}"
 TMP_BASE="${TMP_BASE%/}"
 TEST_ROOT="$(mktemp -d "$TMP_BASE/agent-governance-project-sync.XXXXXX")"
@@ -103,10 +104,11 @@ fi
 # 自动发现：跳过治理仓自身，保留目录名内部空格，只纳管含 .git / 快照 / 项目入口的子目录。
 discover_root="$TEST_ROOT/discover"
 discover_repo="$discover_root/agent-governance"
-mkdir -p "$discover_repo/global" "$discover_repo/scripts" "$discover_repo/templates/project"
-cp "$SCRIPT" "$discover_repo/scripts/sync-project-governance.sh"
-cp "$ROOT_DIR/scripts/check-version-bump.sh" "$discover_repo/scripts/check-version-bump.sh"
-cp "$ROOT_DIR/scripts/check-rule-paths.sh" "$discover_repo/scripts/check-rule-paths.sh"
+mkdir -p "$discover_repo/global" "$discover_repo/scripts/internal" "$discover_repo/templates/project"
+cp "$GOV" "$discover_repo/scripts/gov"
+cp "$SCRIPT" "$discover_repo/scripts/internal/sync-project-governance.sh"
+cp "$ROOT_DIR/scripts/internal/check-version-bump.sh" "$discover_repo/scripts/internal/check-version-bump.sh"
+cp "$ROOT_DIR/scripts/internal/check-rule-paths.sh" "$discover_repo/scripts/internal/check-rule-paths.sh"
 cp "$ROOT_DIR/templates/project/AI-GOVERNANCE.md" "$discover_repo/templates/project/AI-GOVERNANCE.md"
 cp "$ROOT_DIR/VERSION" "$discover_repo/VERSION"
 printf '* text=auto eol=lf\n' >"$discover_repo/.gitattributes"
@@ -123,7 +125,7 @@ printf '# snapshot\n' >"$discover_root/included-snapshot/AI-GOVERNANCE.md"
 printf '# space repo\n' >"$discover_root/My App/AGENTS.md"
 printf 'unrelated\n' >"$discover_root/not-a-repo/notes.txt"
 
-if bash "$discover_repo/scripts/sync-project-governance.sh" --root "$discover_root" >"$TEST_ROOT/discover.out" 2>&1; then
+if bash "$discover_repo/scripts/gov" project sync --root "$discover_root" >"$TEST_ROOT/discover.out" 2>&1; then
   if [[ -f "$discover_root/included-agents/AI-GOVERNANCE.md" &&
     -f "$discover_root/included-snapshot/AI-GOVERNANCE.md" &&
     -f "$discover_root/My App/AI-GOVERNANCE.md" &&
@@ -141,7 +143,7 @@ else
 fi
 
 # 显式把治理仓自身传给 --repos 也必须拒绝。
-if bash "$discover_repo/scripts/sync-project-governance.sh" --root "$discover_root" --repos agent-governance >"$TEST_ROOT/reject-self.out" 2>&1; then
+if bash "$discover_repo/scripts/gov" project sync --root "$discover_root" --repos agent-governance >"$TEST_ROOT/reject-self.out" 2>&1; then
   printf 'FAIL reject-self-repo\n' >&2
   failures=$((failures + 1))
 else
@@ -150,7 +152,7 @@ fi
 
 # 未提交但自洽的脚本产物在「新版本再次同步」时必须通过前置检查与写入循环二次校验。
 resync_repo="$TEST_ROOT/resync-repo"
-mkdir -p "$resync_repo/global" "$resync_repo/scripts" "$resync_repo/templates/project" \
+mkdir -p "$resync_repo/global" "$resync_repo/scripts/internal" "$resync_repo/templates/project" \
   "$resync_repo/tests" "$resync_repo/.github" "$resync_repo/.githooks" "$resync_repo/skills/local/ai-change-flow"
 printf 'global rules\n' >"$resync_repo/global/AGENTS.md"
 printf 'tests\n' >"$resync_repo/tests/placeholder.sh"
@@ -160,10 +162,11 @@ printf 'readme\n' >"$resync_repo/README.md"
 printf 'onboarding\n' >"$resync_repo/onboarding.md"
 printf 'skill\n' >"$resync_repo/skills/local/ai-change-flow/SKILL.md"
 printf 'checker\n' >"$resync_repo/scripts/check-commit-attribution.sh"
-printf 'distributor\n' >"$resync_repo/scripts/distribute.sh"
-cp "$SCRIPT" "$resync_repo/scripts/sync-project-governance.sh"
-cp "$ROOT_DIR/scripts/check-version-bump.sh" "$resync_repo/scripts/check-version-bump.sh"
-cp "$ROOT_DIR/scripts/check-rule-paths.sh" "$resync_repo/scripts/check-rule-paths.sh"
+printf 'distributor\n' >"$resync_repo/scripts/internal/distribute.sh"
+cp "$GOV" "$resync_repo/scripts/gov"
+cp "$SCRIPT" "$resync_repo/scripts/internal/sync-project-governance.sh"
+cp "$ROOT_DIR/scripts/internal/check-version-bump.sh" "$resync_repo/scripts/internal/check-version-bump.sh"
+cp "$ROOT_DIR/scripts/internal/check-rule-paths.sh" "$resync_repo/scripts/internal/check-rule-paths.sh"
 cp "$ROOT_DIR/templates/project/AI-GOVERNANCE.md" "$resync_repo/templates/project/AI-GOVERNANCE.md"
 printf '1.0.0\n' >"$resync_repo/VERSION"
 printf '* text=auto eol=lf\n' >"$resync_repo/.gitattributes"
@@ -184,7 +187,7 @@ printf 'v0\n' >"$resync_repo/target/proj-a/AI-GOVERNANCE.md"
 git -C "$resync_repo/target/proj-a" add .
 git -C "$resync_repo/target/proj-a" commit -q -m "chore: seed"
 
-if ! bash "$resync_repo/scripts/sync-project-governance.sh" --root "$resync_repo/target" --repos proj-a >"$TEST_ROOT/resync1.out" 2>&1; then
+if ! bash "$resync_repo/scripts/gov" project sync --root "$resync_repo/target" --repos proj-a >"$TEST_ROOT/resync1.out" 2>&1; then
   printf 'FAIL first-resync\n' >&2
   cat "$TEST_ROOT/resync1.out" >&2
   failures=$((failures + 1))
@@ -198,7 +201,7 @@ git -C "$resync_repo" add templates/project/AI-GOVERNANCE.md VERSION
 git -C "$resync_repo" commit -q -m "chore: release 1.0.1"
 git -C "$resync_repo" update-ref refs/remotes/origin/main HEAD
 
-if bash "$resync_repo/scripts/sync-project-governance.sh" --root "$resync_repo/target" --repos proj-a >"$TEST_ROOT/resync2.out" 2>&1; then
+if bash "$resync_repo/scripts/gov" project sync --root "$resync_repo/target" --repos proj-a >"$TEST_ROOT/resync2.out" 2>&1; then
   second_hash="$(awk '/^> baseline-content-sha256: /{print $3}' "$resync_repo/target/proj-a/AI-GOVERNANCE.md")"
   if [[ -n "$first_hash" && -n "$second_hash" && "$first_hash" != "$second_hash" ]] &&
     grep -q '^> baseline-version: 1.0.1$' "$resync_repo/target/proj-a/AI-GOVERNANCE.md"; then
@@ -215,7 +218,7 @@ fi
 
 # 本地治理仓落后 origin/main 时必须拒绝同步旧版快照。
 git -C "$resync_repo" checkout -q HEAD~1
-if bash "$resync_repo/scripts/sync-project-governance.sh" --root "$resync_repo/target" --repos proj-a >"$TEST_ROOT/behind.out" 2>&1; then
+if bash "$resync_repo/scripts/gov" project sync --root "$resync_repo/target" --repos proj-a >"$TEST_ROOT/behind.out" 2>&1; then
   printf 'FAIL reject-behind-origin-main\n' >&2
   failures=$((failures + 1))
 elif grep -q '落后' "$TEST_ROOT/behind.out"; then

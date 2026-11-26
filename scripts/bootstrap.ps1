@@ -55,12 +55,12 @@ function Use-Runtime([string] $prefix) {
 function Resolve-LocalBootstrapScript {
     if (!$PSScriptRoot) { return $null }
     $candidate = Join-Path $PSScriptRoot 'bootstrap.sh'
-    $installScript = Join-Path $PSScriptRoot 'install.sh'
+    $govScript = Join-Path $PSScriptRoot 'gov'
     $repoRoot = Split-Path $PSScriptRoot -Parent
     $versionFile = if ($repoRoot) { Join-Path $repoRoot 'VERSION' } else { $null }
     if (
         (Test-Path -LiteralPath $candidate -PathType Leaf) -and
-        (Test-Path -LiteralPath $installScript -PathType Leaf) -and
+        (Test-Path -LiteralPath $govScript -PathType Leaf) -and
         $versionFile -and
         (Test-Path -LiteralPath $versionFile -PathType Leaf)
     ) {

@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+# gov — agent-governance 统一 CLI 入口
+#
+# 用法:
+#   bash scripts/gov <command> [args...]   (或 ./scripts/gov <command> [args...])
+#
+# 命令:
+#   install                                一键分发全局规则并同步全部 Skills
+#   distribute [args...]                   分发全局基线（--check / --rollback / --list-targets）
+#   skills <subcmd> [args...]              管理全局 Skills（plan / sync / status / prune / rollback）
+#   check [all|version|paths|attribution]  运行治理校验（默认 all = version + paths）
+#   project <init|sync> [args...]          新项目建项脚手架 / 同步下游 AI-GOVERNANCE.md 快照
+#   test                                   运行全部隔离测试套件（tests/run-all.sh）
+#   help | -h | --help                     显示本帮助
+set -euo pipefail
+
+_self="${BASH_SOURCE[0]:-}"
+[[ -f "$_self" ]] || _self="$0"
+while [[ -L "$_self" ]]; do
+  _dir="$(cd "$(dirname "$_self")" && pwd)"
+  _target="$(readlink "$_self")"
+  case "$_target" in
+    /*) _self="$_target" ;;
+    *) _self="$_dir/$_target" ;;
+  esac
+done
+SCRIPT_DIR="$(cd "$(dirname "$_self")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+INTERNAL_DIR="$SCRIPT_DIR/internal"
+
+PY_CMD=""
+
+resolve_python() {
+  local -a candidates=()
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) export PYTHONUTF8=1; candidates=(python python3) ;;
+    *) candidates=(python3 python) ;;
+  esac
+  export PYTHONDONTWRITEBYTECODE=1
+
+  local cmd
+  for cmd in "${candidates[@]}"; do
+    if command -v "$cmd" >/dev/null 2>&1 &&
+       "$cmd" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1; then
+      PY_CMD="$cmd"
+      return 0
+    fi
+  done
+  printf '错误: 需要 Python 3.9 或更高版本。\n' >&2
+  return 1
+}
+
+usage() {
+  cat <<'USAGE'
+用法:
+  bash scripts/gov <command> [args...]
+
+命令:
+  install                                       一键分发全局规则并同步全部 Skills
+  distribute [--check|--rollback|--list-targets]
+                                                分发、校验或回滚本机全局基线
+  skills <plan|sync|status|prune|rollback> [...]
+                                                管理全局 Skills 清单与事务回退
+  check [all|version|paths|attribution] [...]   运行治理校验（默认 all = version + paths）
+  project init [--target <dir>] [...]           初始化新项目自包含治理骨架
+  project sync [--root <dir>] [--check] [...]   同步或校验下游项目 AI-GOVERNANCE.md 快照
+  test                                          运行治理仓全部隔离测试套件
+  help | -h | --help                            显示本帮助
+USAGE
+}
+
+usage_check() {
+  cat <<'USAGE'
+用法:
+  bash scripts/gov check                        # 等价于 check all（version + paths）
+  bash scripts/gov check all                    # 运行版本递增与仓内路径校验
+  bash scripts/gov check version                # 校验规则变更与 VERSION 递增关系
+  bash scripts/gov check paths [--installed] [--list]
+                                                # 校验规则与文档内路径引用可达性
+  bash scripts/gov check attribution [args...]  # 检查 Git commit 作者/消息归属（支持 --governance / --print-policy）
+USAGE
+}
+
+usage_project() {
+  cat <<'USAGE'
+用法:
+  bash scripts/gov project init --target <dir> [--project-name <name>] [--apps <a,b>] [--add-app <c>] [--dry-run]
+  bash scripts/gov project sync --root <workspace> [--repos <a,b>] [--check]
+USAGE
+}
+
+if [[ "$#" -eq 0 ]]; then
+  usage >&2
+  exit 2
+fi
+
+cmd="$1"
+shift
+
+case "$cmd" in
+  -h|--help|help)
+    usage
+    exit 0
+    ;;
+  install)
+    if [[ "$#" -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
+      printf '用法: bash scripts/gov install\n'
+      exit 0
+    fi
+    if [[ "$#" -ne 0 ]]; then
+      printf '用法: bash scripts/gov install\n' >&2
+      exit 2
+    fi
+    resolve_python
+    bash "$INTERNAL_DIR/distribute.sh"
+    exec "$PY_CMD" "$INTERNAL_DIR/skills.py" sync --adopt-all
+    ;;
+  distribute)
+    exec bash "$INTERNAL_DIR/distribute.sh" "$@"
+    ;;
+  skills)
+    resolve_python
+    exec "$PY_CMD" "$INTERNAL_DIR/skills.py" "$@"
+    ;;
+  check)
+    if [[ "$#" -eq 0 ]]; then
+      sub="all"
+    else
+      sub="$1"
+      shift
+    fi
+    case "$sub" in
+      -h|--help|help)
+        usage_check
+        exit 0
+        ;;
+      all)
+        if [[ "$#" -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
+          printf '用法: bash scripts/gov check all\n'
+          exit 0
+        fi
+        if [[ "$#" -ne 0 ]]; then
+          printf '用法: bash scripts/gov check all\n' >&2
+          exit 2
+        fi
+        bash "$INTERNAL_DIR/check-version-bump.sh"
+        exec bash "$INTERNAL_DIR/check-rule-paths.sh"
+        ;;
+      version)
+        if [[ "$#" -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
+          printf '用法: bash scripts/gov check version\n'
+          exit 0
+        fi
+        if [[ "$#" -ne 0 ]]; then
+          printf '用法: bash scripts/gov check version\n' >&2
+          exit 2
+        fi
+        exec bash "$INTERNAL_DIR/check-version-bump.sh"
+        ;;
+      paths)
+        exec bash "$INTERNAL_DIR/check-rule-paths.sh" "$@"
+        ;;
+      attribution|attr)
+        exec bash "$SCRIPT_DIR/check-commit-attribution.sh" "$@"
+        ;;
+      *)
+        printf '错误: 未知的 check 子命令: %s\n' "$sub" >&2
+        usage_check >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  project)
+    if [[ "$#" -eq 0 ]]; then
+      usage_project >&2
+      exit 2
+    fi
+    sub="$1"
+    shift
+    case "$sub" in
+      -h|--help|help)
+        usage_project
+        exit 0
+        ;;
+      init)
+        resolve_python
+        exec "$PY_CMD" "$INTERNAL_DIR/init_project_governance.py" "$@"
+        ;;
+      sync)
+        exec bash "$INTERNAL_DIR/sync-project-governance.sh" "$@"
+        ;;
+      *)
+        printf '错误: 未知的 project 子命令: %s\n' "$sub" >&2
+        usage_project >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  test)
+    if [[ "$#" -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
+      printf '用法: bash scripts/gov test\n'
+      exit 0
+    fi
+    if [[ "$#" -ne 0 ]]; then
+      printf '用法: bash scripts/gov test\n' >&2
+      exit 2
+    fi
+    exec bash "$REPO_DIR/tests/run-all.sh"
+    ;;
+  *)
+    printf '错误: 未知命令: %s\n' "$cmd" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

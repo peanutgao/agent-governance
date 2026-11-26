@@ -1,6 +1,6 @@
 # 多项目 AI Agent 上下文工程：详细实施方案
 
-> 版本：1.1（已与 `agent-governance` 工具链对齐）｜日期：2026-11-24｜状态：通用实施蓝图（存量项目按 P0–P5 增量接入；新建项目可直接经本仓 [`scripts/init-project-governance.sh`](../../scripts/init-project-governance.sh) 与 [`new-project-bootstrap`](../../skills/local/new-project-bootstrap/SKILL.md) Skill 落地）  
+> 版本：1.1（已与 `agent-governance` 工具链对齐）｜日期：2026-11-24｜状态：通用实施蓝图（存量项目按 P0–P5 增量接入；新建项目可直接经本仓 [`scripts/gov`](../../scripts/gov)（`project init`）与 [`new-project-bootstrap`](../../skills/local/new-project-bootstrap/SKILL.md) Skill 落地）  
 > 范围：前端、后端、移动端、单仓库、Monorepo、多仓库  
 > 目标 Agent：Codex、Claude Code、OpenCode、Cursor、GitHub Copilot、Antigravity、WorkBuddy、ZCode  
 > 设计目标：共享可信知识、按需检索、最小侵入、确定性防偏移门禁与可追溯验证；**不预设项目语言、目录或工具链**。
@@ -9,7 +9,7 @@
 
 **推荐主方案（区分新建项目与存量老项目）：**
 
-- **新建项目（单端 / 多端 Monorepo）**：优先按 [`new-project-bootstrap`](../../skills/local/new-project-bootstrap/SKILL.md) 6 阶段起盘，并用 `bash scripts/init-project-governance.sh --target <project> [--apps ...]` 一键落盘精简 `AGENTS.md`（多端含路由表）、薄指针、`docs/{overview.md,contracts,specs,todos,adr,architecture/tech-stack.md}`、`.github/CODEOWNERS` 及 `check-spec-sync.py` + `check-commit-attribution.sh` 机械门禁。
+- **新建项目（单端 / 多端 Monorepo）**：优先按 [`new-project-bootstrap`](../../skills/local/new-project-bootstrap/SKILL.md) 6 阶段起盘，并用 `bash scripts/gov project init --target <project> [--apps ...]` 一键落盘精简 `AGENTS.md`（多端含路由表）、薄指针、`docs/{overview.md,contracts,specs,todos,adr,architecture/tech-stack.md}`、`.github/CODEOWNERS` 及 `check-spec-sync.py` + `check-commit-attribution.sh` 机械门禁。
 - **存量老项目 / 跨多仓库改造**：按本方案第 1 节先做 **P0 只读盘点**，最小侵入接入 `AGENTS.md` 与文档导航，不强行重排老仓目录。
 
 核心共同原则：
@@ -466,7 +466,7 @@ Agent 只使用已验证条目。缺少运行环境时必须输出 BLOCKED，而
 ### 8.5 CI 与确定性机械门禁落地
 
 - **存量老仓库**：先盘点实际托管平台和现有流水线，在原 CI 上**增量添加明确步骤**（文档链接检查、Spec/契约同步校验、已有测试与原生 Linter），不得凭空重写整个流水线。
-- **新建项目（直接使用本仓脚手架）**：[`scripts/init-project-governance.sh`](../../scripts/init-project-governance.sh) 已内置开箱可用的轻量机械门禁，不依赖特定 AI 工具：
+- **新建项目（直接使用本仓脚手架）**：[`scripts/gov`](../../scripts/gov)（`project init`）已内置开箱可用的轻量机械门禁，不依赖特定 AI 工具：
   1. **Spec / Todo 防遗忘门禁**：`<project>/scripts/governance/check-spec-sync.py` 接入本地 `commit-msg` 与 CI（支持单端与多端按端隔离校验、`merge-base` 准确比对、`Spec-Exempt:` 显式豁免与 `ready-to-close` Todo 校验）；
   2. **提交作者归属门禁**：`<project>/scripts/governance/check-commit-attribution.sh` 作为 `commit-msg` 最后一步与 CI 校验；
   3. **依赖清单与治理边界保护**：`<project>/.github/CODEOWNERS` 保护依赖文件、钩子与 CI；

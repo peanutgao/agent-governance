@@ -2,7 +2,7 @@
 # sync-project-governance.sh — 从模板生成项目仓库的 AI-GOVERNANCE.md 快照
 #
 # 用法:
-#   bash scripts/sync-project-governance.sh --root <workspace-root> [--repos <a,b>] [--check]
+#   bash scripts/gov project sync --root <workspace-root> [--repos <a,b>] [--check]
 #
 # 环境变量:
 #   PROJECT_GOVERNANCE_ROOT   等价于 --root
@@ -18,7 +18,7 @@ set -euo pipefail
 
 _self="${BASH_SOURCE[0]:-}"
 [[ -f "$_self" ]] || _self="$0"
-REPO_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
+REPO_DIR="$(cd "$(dirname "$_self")/../.." && pwd)"
 TEMPLATE="$REPO_DIR/templates/project/AI-GOVERNANCE.md"
 VERSION_FILE="$REPO_DIR/VERSION"
 TARGET_ROOT="${PROJECT_GOVERNANCE_ROOT:-}"
@@ -37,9 +37,9 @@ mode="write"
 usage() {
   cat >&2 <<'USAGE'
 用法:
-  sync-project-governance.sh --root <path>                  # 生成/更新目标仓快照
-  sync-project-governance.sh --check --root <path>          # 只校验，不写入
-  sync-project-governance.sh --root <path> --repos <a,b>    # 显式指定仓库名（默认自动发现）
+  bash scripts/gov project sync --root <path>                  # 生成/更新目标仓快照
+  bash scripts/gov project sync --check --root <path>          # 只校验，不写入
+  bash scripts/gov project sync --root <path> --repos <a,b>    # 显式指定仓库名（默认自动发现）
 
 环境变量:
   PROJECT_GOVERNANCE_ROOT                     # 等价于 --root
@@ -195,7 +195,7 @@ done
 
 if [[ "$real_repositories" == 1 ]]; then
   release_commit="$(git -C "$REPO_DIR" rev-parse HEAD)"
-  bash "$REPO_DIR/scripts/check-version-bump.sh"
+  bash "$REPO_DIR/scripts/internal/check-version-bump.sh"
   if git -C "$REPO_DIR" remote get-url origin >/dev/null 2>&1; then
     if ! git -C "$REPO_DIR" fetch --quiet origin 2>/dev/null; then
       printf '错误: 无法 fetch origin，拒绝同步可能过时的治理基线。\n' >&2
@@ -303,7 +303,7 @@ done
 
 if [[ "$mode" == "check" ]]; then
   if (( mismatch > 0 )); then
-    printf '==> 项目治理快照校验未通过；运行不带 --check 的同名脚本重新生成。\n' >&2
+    printf '==> 项目治理快照校验未通过；运行 bash scripts/gov project sync 重新生成。\n' >&2
     exit 1
   fi
   printf '==> 项目治理快照与模板一致 (baseline-version=%s)\n' "$version"

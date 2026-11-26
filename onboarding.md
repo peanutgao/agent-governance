@@ -32,9 +32,9 @@ try {
 
 两种入口都从 GitHub 的 `main` 拉取完整仓库到用户目录下的 `.local/share/agent-governance/bootstrap/repo`。再次运行同一命令会快进更新并分发。AI 客户端由设备自行安装。PowerShell 执行策略仅对上面启动的子进程生效。
 
-已经自行克隆仓库且运行时齐备时，可以从仓库根目录直接运行 `bash scripts/install.sh`。Windows 从 PowerShell 运行 `scripts/bootstrap.ps1`，可一并准备所需运行时。
+已经自行克隆仓库且运行时齐备时，可以从仓库根目录直接运行 `bash scripts/gov install`。Windows 从 PowerShell 运行 `scripts/bootstrap.ps1`，可一并准备所需运行时。
 
-安装脚本先分发以下全局规则，再以 `--adopt-all` 自动接管并把 [清单中的 Skills](skills/manifest.json) 同步到 [各工具的全局 Skills 目录](skills/README.md#分发路径)（覆盖前自动建事务快照，可用 `skills.py rollback` 回退）。首次安装的依赖见 [Skills 使用说明](skills/README.md)。
+安装脚本先分发以下全局规则，再以 `--adopt-all` 自动接管并把 [清单中的 Skills](skills/manifest.json) 同步到 [各工具的全局 Skills 目录](skills/README.md#分发路径)（覆盖前自动建事务快照，可用 `bash scripts/gov skills rollback` 回退）。首次安装的依赖见 [Skills 使用说明](skills/README.md)。
 
 - `~/.codex/AGENTS.md`：全局通用 AI 开发约束；
 - `~/.codex/check-commit-attribution.sh`：commit 归属检查器，可复制进项目仓库；
@@ -44,7 +44,7 @@ try {
 - `~/Documents/work/CLAUDE.md`：OrbStack 虚拟机共享 work 目录入口（普通文件副本，供 VM 内工具经挂载读取）；
 - `~/.codex/.gov-version`：已安装版本号。
 
-用 `bash scripts/distribute.sh --list-targets` 可以只查看目标清单，不安装。
+用 `bash scripts/gov distribute --list-targets` 可以只查看目标清单，不安装。
 
 本仓根目录的 `AGENTS.md` 是指向 `global/AGENTS.md` 的轻量指针文件（非软链、非正文副本），避免工具把同一份规则按不同路径重复注入上下文。它不是分发产物，随仓库一起 clone 下来，`tests/distribute.sh` 会守住它。
 
@@ -59,7 +59,7 @@ try {
 ```bash
 cd agent-governance
 git pull --ff-only
-bash scripts/install.sh
+bash scripts/gov install
 ```
 
 如果分发脚本提示规则文件有未提交修改，先检查本机是否手工编辑过治理源文件；不要用本机副本覆盖治理仓规则。
@@ -67,9 +67,9 @@ bash scripts/install.sh
 ## 本地校验与回滚
 
 ```bash
-bash tests/run-all.sh                     # 执行全部隔离测试套件
-bash scripts/distribute.sh --list-targets  # 只看目标清单，不安装
-bash scripts/distribute.sh --rollback      # 回到最近一次分发前的整组状态
+bash scripts/gov test                       # 执行全部隔离测试套件（等价 tests/run-all.sh）
+bash scripts/gov distribute --list-targets  # 只看目标清单，不安装
+bash scripts/gov distribute --rollback      # 回到最近一次分发前的整组状态
 ```
 
 分发门禁包含「本地仓不落后 origin」：origin 存在但 fetch 失败会直接中止，不会把本地旧规则装成「已是最新」。

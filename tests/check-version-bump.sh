@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CHECKER="$ROOT_DIR/scripts/check-version-bump.sh"
+CHECKER="$ROOT_DIR/scripts/internal/check-version-bump.sh"
 TMP_BASE="${TMPDIR:-/tmp}"
 TMP_BASE="${TMP_BASE%/}"
 TEST_ROOT="$(mktemp -d "$TMP_BASE/agent-governance-version-bump.XXXXXX")"
@@ -20,7 +20,7 @@ make_fixture() {
   local candidate_version="$3"
   local repo="$TEST_ROOT/$name"
 
-  mkdir -p "$repo/global" "$repo/.github" "$repo/.githooks" "$repo/scripts" "$repo/tests" "$repo/templates/project" "$repo/skills/local/ai-change-flow/references"
+  mkdir -p "$repo/global" "$repo/.github" "$repo/.githooks" "$repo/scripts/internal" "$repo/tests" "$repo/templates/project" "$repo/skills/local/ai-change-flow/references"
   git init -q "$repo"
   git -C "$repo" config user.name "Joseph Koh"
   git -C "$repo" config user.email "joseph@example.com"
@@ -33,11 +33,12 @@ make_fixture() {
   printf 'baseline onboarding\n' >"$repo/onboarding.md"
   printf 'baseline attribution checker\n' >"$repo/scripts/check-commit-attribution.sh"
   printf 'baseline project template\n' >"$repo/templates/project/AI-GOVERNANCE.md"
-  printf 'baseline project sync\n' >"$repo/scripts/sync-project-governance.sh"
-  printf 'baseline distributor\n' >"$repo/scripts/distribute.sh"
+  printf 'baseline project sync\n' >"$repo/scripts/internal/sync-project-governance.sh"
+  printf 'baseline distributor\n' >"$repo/scripts/internal/distribute.sh"
   printf 'baseline bootstrap\n' >"$repo/scripts/bootstrap.sh"
-  cp "$CHECKER" "$repo/scripts/check-version-bump.sh"
-  cp "$ROOT_DIR/scripts/check-rule-paths.sh" "$repo/scripts/check-rule-paths.sh"
+  cp "$ROOT_DIR/scripts/gov" "$repo/scripts/gov"
+  cp "$CHECKER" "$repo/scripts/internal/check-version-bump.sh"
+  cp "$ROOT_DIR/scripts/internal/check-rule-paths.sh" "$repo/scripts/internal/check-rule-paths.sh"
   printf 'baseline tests\n' >"$repo/tests/placeholder.sh"
   printf '%s\n' "$initial_version" >"$repo/VERSION"
   printf '* text=auto eol=lf\n' >"$repo/.gitattributes"
@@ -71,7 +72,7 @@ expect_version_result() {
   local expected_msg="${4:-}"
   local actual_code
 
-  if (cd "$repo" && bash scripts/check-version-bump.sh) >"$TEST_ROOT/$label.out" 2>&1; then
+  if (cd "$repo" && bash scripts/gov check version) >"$TEST_ROOT/$label.out" 2>&1; then
     actual_code=0
   else
     actual_code=$?

@@ -14,7 +14,7 @@ description: Enterprise 6-stage greenfield project bootstrap workflow (clarify w
 ```text
 Stage 0: 项目画像、需求与非目标澄清（grilling）
    ↓
-Stage 1: 规范目录骨架 + 接入轻量自包含项目治理（scripts/init-project-governance.sh）
+Stage 1: 规范目录骨架 + 接入轻量自包含项目治理（scripts/gov project init）
    ↓
 Stage 2: 成熟开源选型、轻量 ADR、首版 Spec & Todo → 独立方案复核
    ↓
@@ -30,7 +30,7 @@ Stage 5: 放行进入常规业务模块开发
 | 阶段 | 必做交付物 | 关联能力 / 命令 | 放行条件 |
 | --- | --- | --- | --- |
 | **Stage 0 澄清** | 产品目标、**Non-Goals（明确不做）**、运行形态（单端 / 多端 Monorepo / 多仓）、技术栈与安全数据红线 | 调用 `grilling` 逐问确认 | 核心边界与首期范围无未决歧义 |
-| **Stage 1 建骨架与门禁** | 根目录 `AGENTS.md`（多端含子端路由表）、`CLAUDE.md` 薄指针、`docs/{overview.md,contracts,architecture/tech-stack.md,specs,todos,adr}`、`.github/CODEOWNERS`、Spec 同步与归属门禁 | 单端：`bash scripts/init-project-governance.sh --target <project>`<br>多端：`--apps <backend,ios,admin,frontend>`（后续扩端 `--add-app`）+ `<project>/scripts/governance/install-hooks.sh` | `<project>/AGENTS.md`（及各端 `<app>/AGENTS.md`）填好命令；`CODEOWNERS` 替换为真实负责人；本地 `commit-msg` 钩子激活 |
+| **Stage 1 建骨架与门禁** | 根目录 `AGENTS.md`（多端含子端路由表）、`CLAUDE.md` 薄指针、`docs/{overview.md,contracts,architecture/tech-stack.md,specs,todos,adr}`、`.github/CODEOWNERS`、Spec 同步与归属门禁 | 单端：`bash scripts/gov project init --target <project>`<br>多端：`--apps <backend,ios,admin,frontend>`（后续扩端 `--add-app`）+ `<project>/scripts/governance/install-hooks.sh` | `<project>/AGENTS.md`（及各端 `<app>/AGENTS.md`）填好命令；`CODEOWNERS` 替换为真实负责人；本地 `commit-msg` 钩子激活 |
 | **Stage 2 选型与文档** | `<project>/docs/architecture/tech-stack.md`（成熟开源候选对比与封装目录地图）、基础架构 ADR、首期核心 `docs/specs/<Module>/` 与 `docs/todos/<task>.md` | 路由 `superpowers` 拆解 Todo；按 `ai-change-flow` 过**独立方案复核** | 用户确认 Spec/Todo 且独立方案复核 `PASS` |
 | **Stage 3 基建先于业务** | 仅建**首期业务真需要的最小基建**：带 UI 先建两层 Design Token（Primitive + Semantic）与核心组件二次封装；全项目先建三方库薄封装（网络/日志/错误/配置/存储或鉴权）；配好本端**原生 Linter 防绕过规则**（ESLint/Stylelint、Checkstyle、SwiftLint、Detekt）并登记到 `tech-stack.md` 与 CI | 各端原生 Linter + `tech-stack.md` 目录地图 | 封装层落地、目录地图已登记、故意违规样例能被原生 Linter 真实拦截 |
 | **Stage 4 Walking Skeleton** | 1 条极薄的端到端烟测链路（如健康检查接口，或 1 个只用 Token + 二次封装组件的最小页面） | 项目真实构建、单测、原生 Lint 与治理门禁 | 构建、测试、原生 Lint、Spec 与归属门禁全绿 |

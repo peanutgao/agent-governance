@@ -3,8 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-INIT_SCRIPT="$ROOT_DIR/scripts/init-project-governance.sh"
-SYNC_SCRIPT="$ROOT_DIR/scripts/sync-project-governance.sh"
+GOV_SCRIPT="$ROOT_DIR/scripts/gov"
 
 PY_CMD=python3
 case "$(uname -s)" in
@@ -25,48 +24,48 @@ fail() { printf 'FAIL %s: %s\n' "$1" "${2:-}" >&2; failures=$((failures + 1)); }
 # 1. 静态语法检查（bash -n + py_compile，不污染源码 __pycache__）
 syntax_ok=1
 for shf in \
-  "$INIT_SCRIPT" \
+  "$GOV_SCRIPT" \
   "$ROOT_DIR"/templates/project/kit/scripts/governance/*.sh \
   "$ROOT_DIR"/templates/project/kit/.githooks/*; do
   bash -n "$shf" 2>"$TEST_ROOT/sh-err.out" || { cat "$TEST_ROOT/sh-err.out" >&2; syntax_ok=0; }
 done
 PYTHONPYCACHEPREFIX="$TEST_ROOT/pycache" "$PY_CMD" -m py_compile \
-  "$ROOT_DIR/scripts/init_project_governance.py" \
+  "$ROOT_DIR/scripts/internal/init_project_governance.py" \
   "$ROOT_DIR/templates/project/kit/scripts/governance/check-spec-sync.py" 2>"$TEST_ROOT/py-err.out" || { cat "$TEST_ROOT/py-err.out" >&2; syntax_ok=0; }
 [[ "$syntax_ok" == 1 ]] && pass syntax-bash-and-python || fail syntax-bash-and-python
 
 # 2. 拒绝在治理仓自身内部初始化 + dry-run 不写入
-if bash "$INIT_SCRIPT" --target "$ROOT_DIR" >/dev/null 2>&1; then
+if bash "$GOV_SCRIPT" project init --target "$ROOT_DIR" >/dev/null 2>&1; then
   fail refuse-self-target
 else
   pass refuse-self-target
 fi
 
 DRY_DIR="$TEST_ROOT/dry-app"
-if bash "$INIT_SCRIPT" --target "$DRY_DIR" --dry-run >/dev/null 2>&1 && [[ ! -e "$DRY_DIR" ]]; then
+if bash "$GOV_SCRIPT" project init --target "$DRY_DIR" --dry-run >/dev/null 2>&1 && [[ ! -e "$DRY_DIR" ]]; then
   pass dry-run-no-writes
 else
   fail dry-run-no-writes
 fi
 
-# 3. 单端初始化 + 既有文件不覆盖 + 与 sync-project-governance.sh 字节一致互操作
+# 3. 单端初始化 + 既有文件不覆盖 + 与 scripts/gov project sync 字节一致互操作
 WS_ROOT="$TEST_ROOT/workspace"
 APP_DIR="$WS_ROOT/demo-app"
 mkdir -p "$APP_DIR"
 printf '# Keep existing README\n' >"$APP_DIR/AGENTS.md"
 
-if bash "$INIT_SCRIPT" --target "$APP_DIR" --project-name "DemoApp" >/dev/null &&
+if bash "$GOV_SCRIPT" project init --target "$APP_DIR" --project-name "DemoApp" >/dev/null &&
    grep -q "Keep existing README" "$APP_DIR/AGENTS.md" &&
    [[ -f "$APP_DIR/CLAUDE.md" && -f "$APP_DIR/.github/CODEOWNERS" && -f "$APP_DIR/AI-GOVERNANCE.md" &&
       -f "$APP_DIR/scripts/governance/check-spec-sync.py" && -f "$APP_DIR/scripts/governance/check-commit-attribution.sh" ]] &&
-   bash "$SYNC_SCRIPT" --check --root "$WS_ROOT" --repos "demo-app" >/dev/null; then
+   bash "$GOV_SCRIPT" project sync --check --root "$WS_ROOT" --repos "demo-app" >/dev/null; then
   pass single-app-init-preserves-existing-and-sync-interop
 else
   fail single-app-init-preserves-existing-and-sync-interop
 fi
 
 # 已初始化后禁止重复 init
-if bash "$INIT_SCRIPT" --target "$APP_DIR" >/dev/null 2>&1; then
+if bash "$GOV_SCRIPT" project init --target "$APP_DIR" >/dev/null 2>&1; then
   fail refuse-repeat-init
 else
   pass refuse-repeat-init
@@ -154,7 +153,7 @@ fi
 
 # 5. 多端 Monorepo（--apps、根多端路由表、--add-app、重叠校验、按端 Spec 隔离、共享契约、锁文件与 Markdown 排除）
 MONO_DIR="$TEST_ROOT/test-project"
-if bash "$INIT_SCRIPT" --target "$MONO_DIR" --project-name "test-project" \
+if bash "$GOV_SCRIPT" project init --target "$MONO_DIR" --project-name "test-project" \
      --apps "test-project-backend,test-project-client-ios,test-project-admin" >/dev/null &&
    grep -q 'test-project-client-ios/AGENTS.md' "$MONO_DIR/AGENTS.md" &&
    [[ -f "$MONO_DIR/docs/overview.md" && -f "$MONO_DIR/docs/contracts/README.md" &&
@@ -165,12 +164,12 @@ else
   fail monorepo-init-and-root-routing-table
 fi
 
-if bash "$INIT_SCRIPT" --target "$MONO_DIR" --add-app "test-project-frontend" --dry-run >/dev/null &&
+if bash "$GOV_SCRIPT" project init --target "$MONO_DIR" --add-app "test-project-frontend" --dry-run >/dev/null &&
    [[ ! -e "$MONO_DIR/test-project-frontend" ]] &&
-   bash "$INIT_SCRIPT" --target "$MONO_DIR" --add-app "test-project-frontend" >/dev/null &&
+   bash "$GOV_SCRIPT" project init --target "$MONO_DIR" --add-app "test-project-frontend" >/dev/null &&
    [[ -f "$MONO_DIR/test-project-frontend/AGENTS.md" ]] &&
-   ! bash "$INIT_SCRIPT" --target "$MONO_DIR" --add-app "test-project-backend/sub" >/dev/null 2>&1 &&
-   ! bash "$INIT_SCRIPT" --target "$MONO_DIR" --add-app "test-project-frontend" >/dev/null 2>&1; then
+   ! bash "$GOV_SCRIPT" project init --target "$MONO_DIR" --add-app "test-project-backend/sub" >/dev/null 2>&1 &&
+   ! bash "$GOV_SCRIPT" project init --target "$MONO_DIR" --add-app "test-project-frontend" >/dev/null 2>&1; then
   pass monorepo-add-app-and-overlap-guards
 else
   fail monorepo-add-app-and-overlap-guards

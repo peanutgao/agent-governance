@@ -215,7 +215,10 @@ def validate_target(repo_dir: Path, target_raw: Path, *, allow_create: bool) -> 
 
 def main(argv: List[str]) -> int:
     configure_stdio()
-    parser = argparse.ArgumentParser(description="Scaffold lightweight self-contained project AI governance.")
+    parser = argparse.ArgumentParser(
+        prog="bash scripts/gov project init",
+        description="Scaffold lightweight self-contained project AI governance.",
+    )
     parser.add_argument("--target", required=True, type=Path)
     parser.add_argument("--project-name", default="")
     parser.add_argument("--apps", action="append", default=[], help="Comma-separated sub-app dirs for monorepo init.")
@@ -227,7 +230,7 @@ def main(argv: List[str]) -> int:
         print("错误: --apps 与 --add-app 不能同时使用。", file=sys.stderr)
         return 2
 
-    repo_dir = Path(__file__).resolve().parent.parent
+    repo_dir = Path(__file__).resolve().parents[2]
     try:
         version = read_version(repo_dir)
         target = validate_target(repo_dir, args.target, allow_create=not bool(args.add_app))
@@ -274,7 +277,7 @@ def main(argv: List[str]) -> int:
             return 0
 
         if (target / "governance.config.json").exists():
-            raise ValueError(f"{target} 已初始化（存在 governance.config.json）；追加子端请用 --add-app，更新 AI-GOVERNANCE.md 请用 sync-project-governance.sh。")
+            raise ValueError(f"{target} 已初始化（存在 governance.config.json）；追加子端请用 --add-app，更新 AI-GOVERNANCE.md 请用 scripts/gov project sync。")
 
         kit_dir = repo_dir / "templates" / "project" / "kit"
         init_roots = parse_apps(args.apps) if args.apps else []

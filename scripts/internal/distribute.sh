@@ -2,13 +2,13 @@
 # distribute.sh — agent-governance 个人全局基线分发脚本
 #
 # 用法:
-#   bash scripts/distribute.sh                     # 分发
-#   bash scripts/distribute.sh --rollback          # 回滚到最近一次分发前的整组快照
-#   bash scripts/distribute.sh --check             # 只校验已安装副本，不一致退出 1
-#   bash scripts/distribute.sh --list-targets      # 只打印目标清单，不安装
+#   bash scripts/gov distribute                     # 分发
+#   bash scripts/gov distribute --rollback          # 回滚到最近一次分发前的整组快照
+#   bash scripts/gov distribute --check             # 只校验已安装副本，不一致退出 1
+#   bash scripts/gov distribute --list-targets      # 只打印目标清单，不安装
 #
 # 行为:
-#   1. 门禁：规则文件无未提交改动、VERSION 已 bump 且严格递增（scripts/check-version-bump.sh）
+#   1. 门禁：规则文件无未提交改动、VERSION 已 bump 且严格递增（scripts/internal/check-version-bump.sh）
 #   2. 门禁：本地检查（bash -n + 非递归测试套件）
 #   3. 门禁：本地仓不落后 origin（有 remote 时）。origin 存在但 fetch 失败一律失败关闭，
 #      绝不「装本地旧内容还显示已是最新」
@@ -19,7 +19,7 @@ set -euo pipefail
 
 _self="${BASH_SOURCE[0]:-}"
 [[ -f "$_self" ]] || _self="$0"
-REPO_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
+REPO_DIR="$(cd "$(dirname "$_self")/../.." && pwd)"
 GLOBAL_DIR="$REPO_DIR/global"
 VERSION_FILE="$REPO_DIR/VERSION"
 DEVICE_HOME="${HOME%/}"
@@ -291,10 +291,10 @@ install_copy() {
 usage() {
   cat >&2 <<'USAGE'
 用法:
-  distribute.sh                # 分发
-  distribute.sh --check        # 只校验已安装副本与源文件是否一致（不一致退出 1）
-  distribute.sh --rollback     # 回滚到最近一次分发前的整组快照
-  distribute.sh --list-targets # 打印目标清单
+  bash scripts/gov distribute                # 分发
+  bash scripts/gov distribute --check        # 只校验已安装副本与源文件是否一致（不一致退出 1）
+  bash scripts/gov distribute --rollback     # 回滚到最近一次分发前的整组快照
+  bash scripts/gov distribute --list-targets # 打印目标清单
 USAGE
 }
 
@@ -348,7 +348,7 @@ check_installed() {
   fi
 
   if (( drifts > 0 )); then
-    printf '==> %d 处与治理仓 %s 不一致。修复：bash scripts/distribute.sh\n' "$drifts" "$latest" >&2
+    printf '==> %d 处与治理仓 %s 不一致。修复：bash scripts/gov distribute\n' "$drifts" "$latest" >&2
     return 1
   fi
   printf '==> 全部受管副本与当前工作树 %s 一致。\n' "$latest"
@@ -488,6 +488,7 @@ run_local_checks() {
   local -a suites=(
     tests/check-rule-paths.sh
     tests/check-bootstrap.sh
+    tests/check-gov-cli.sh
     tests/check-hook.sh
     tests/sync-project-governance.sh
     tests/check-version-bump.sh
@@ -572,7 +573,7 @@ run_local_checks() {
     fi
   fi
 
-  for file in "$REPO_DIR"/scripts/*.sh "$REPO_DIR"/.githooks/*; do
+  for file in "$REPO_DIR"/scripts/gov "$REPO_DIR"/scripts/*.sh "$REPO_DIR"/scripts/internal/*.sh "$REPO_DIR"/.githooks/*; do
     [[ -f "$file" ]] || continue
     if ! bash -n "$file" 2>/dev/null; then
       printf '错误: 语法检查失败，拒绝分发: %s\n' "$file" >&2
@@ -675,9 +676,21 @@ prune_old_backups() {
 
 # --- 主流程 ---------------------------------------------------------------
 main() {
-  local mode="${1:-}"
+  local mode=""
+  if [[ "$#" -gt 0 ]]; then
+    if [[ -z "$1" ]]; then
+      usage
+      return 2
+    fi
+    mode="$1"
+  fi
 
   case "$mode" in
+    -h|--help)
+      [[ "$#" -eq 1 ]] || { usage; return 2; }
+      usage 2>&1
+      return 0
+      ;;
     --rollback)
       [[ "$#" -eq 1 ]] || { usage; return 2; }
       rollback
@@ -718,7 +731,7 @@ main() {
   preflight
   local release_commit
   release_commit="$(git -C "$REPO_DIR" rev-parse HEAD)"
-  bash "$REPO_DIR/scripts/check-version-bump.sh"
+  bash "$REPO_DIR/scripts/internal/check-version-bump.sh"
   run_local_checks
   check_remote_freshness
   if [[ "$(git -C "$REPO_DIR" rev-parse HEAD)" != "$release_commit" ]]; then
@@ -839,7 +852,7 @@ main() {
     printf '       （规则改动请回到治理仓修改源文件，本机副本会被覆盖）\n'
   fi
 
-  printf '==> 完成（当前版本 %s）。回滚: bash scripts/distribute.sh --rollback\n' "$latest"
+  printf '==> 完成（当前版本 %s）。回滚: bash scripts/gov distribute --rollback\n' "$latest"
   printf '    settings.json / settings.local.json / 个人 memory / auth 属个人层，未被触碰。\n'
 }
 

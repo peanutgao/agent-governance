@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # check-version-bump.sh — 规则改了但 VERSION 没 bump 就拦下
 #
-# 用法: bash scripts/check-version-bump.sh
+# 用法: bash scripts/gov check version
 #
 # 规则文件（global/、skills/、templates/、scripts/、tests/、.github/、.githooks/、AGENTS.md、README.md、onboarding.md）
 # 一旦变更，VERSION 必须在同一次或更晚的提交里 bump，否则各设备的 .gov-version 不变、
@@ -10,7 +10,7 @@ set -euo pipefail
 
 _self="${BASH_SOURCE[0]:-}"
 [[ -f "$_self" ]] || _self="$0"
-REPO_DIR="$(cd "$(dirname "$_self")/.." && pwd)"
+REPO_DIR="$(cd "$(dirname "$_self")/../.." && pwd)"
 cd "$REPO_DIR"
 
 RULE_PATHS=(

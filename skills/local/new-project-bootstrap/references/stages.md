@@ -16,7 +16,7 @@
    - **多端 Monorepo**（如 `<project>` 下含 `<project>-backend`、`<project>-client-ios`、`<project>-admin`、`<project>-frontend`）：
      - **顶层 `docs/` 放共有真源**：项目整体情况与术语（`docs/overview.md`）、跨端共享 API/Event/Schema/Token 契约（`docs/contracts/`）、跨端业务 Spec（`docs/specs/`）、总计划（`docs/todos/`）、全局 ADR（`docs/adr/`）；
      - **各端放端内代码与极简入口**：每个端有 `<app>/AGENTS.md`、`<app>/CLAUDE.md`、`<app>/docs/architecture/tech-stack.md` 与 `<app>/docs/specs/`；顶层 `AGENTS.md` 维护多端路由表，确保 Antigravity / WorkBuddy / ZCode / Codex / Cursor / Claude Code / Copilot 全工具都能准确命中对应端规则。
-   - **多仓工作区**（每个端独立 Git 仓）：各端仓库分别独立执行 `init-project-governance.sh`，并在 `docs/overview.md` 标注共享契约仓位置。
+   - **多仓工作区**（每个端独立 Git 仓）：各端仓库分别独立执行 `bash scripts/gov project init`，并在 `docs/overview.md` 标注共享契约仓位置。
 4. **安全、数据与合规红线**：明确禁改区路径（鉴权、资金、迁移、发布、依赖清单）并对应写入 `<project>/.github/CODEOWNERS`。
 
 ## Stage 1：仓库宪法与轻量治理落盘
@@ -24,14 +24,14 @@
 1. 在 `agent-governance` 仓库根目录执行建项脚手架：
    ```bash
    # 单端项目
-   bash scripts/init-project-governance.sh --target <project> --project-name <name>
+   bash scripts/gov project init --target <project> --project-name <name>
 
    # 多端 Monorepo（支持嵌套路径如 client/ios）
-   bash scripts/init-project-governance.sh --target <project> --project-name <name> \
+   bash scripts/gov project init --target <project> --project-name <name> \
      --apps <name>-backend,<name>-client-ios,<name>-admin,<name>-frontend
 
    # 后续在已初始化的多端项目里新增端
-   bash scripts/init-project-governance.sh --target <project> --add-app <name>-client-android
+   bash scripts/gov project init --target <project> --add-app <name>-client-android
    ```
 2. 激活本地 `commit-msg` 钩子（Spec 同步 + Commit 归属）：
    ```bash
@@ -39,7 +39,7 @@
    ```
 3. 补全 `<project>/docs/overview.md`、`<project>/AGENTS.md`（及各端 `<app>/AGENTS.md`）中的真实构建/测试/原生 Lint 命令，并把 `<project>/.github/CODEOWNERS` 中的 `@team-leads` 替换为真实负责人。
 4. 按 [`existing-repo-onboarding.md`](existing-repo-onboarding.md) §2（`I-01～I-05`）对团队在用的 AI 工具做 1 分钟规则加载实测，确认无祖先 `CLAUDE.md` 或 `AGENTS.override.md` 遮蔽。
-5. 后续公共基线升级继续使用 `bash scripts/sync-project-governance.sh --root <workspace>` 同步 `<project>/AI-GOVERNANCE.md`。
+5. 后续公共基线升级继续使用 `bash scripts/gov project sync --root <workspace>` 同步 `<project>/AI-GOVERNANCE.md`。
 
 ## Stage 2：成熟开源选型、轻量 ADR、首版 Spec & Todo
 

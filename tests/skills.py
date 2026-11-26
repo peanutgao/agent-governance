@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 
 REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "internal"))
 import skills as skills_mod
 from skills_store import Store, copy_path, path_key, write_json
 
@@ -47,9 +47,9 @@ class SkillsTest(unittest.TestCase):
         self.repo = self.sandbox / "repo"
         self.home = self.sandbox / "device"
         self.home.mkdir()
-        (self.repo / "scripts").mkdir(parents=True)
-        for script in (REPO / "scripts").glob("skills*.py"):
-            shutil.copy2(script, self.repo / "scripts")
+        (self.repo / "scripts" / "internal").mkdir(parents=True)
+        for script in (REPO / "scripts" / "internal").glob("skills*.py"):
+            shutil.copy2(script, self.repo / "scripts" / "internal")
         self.source = self.repo / "skills" / "local" / NAME
         self.source.mkdir(parents=True)
         self.manifest = self.repo / "skills" / "manifest.json"
@@ -69,7 +69,7 @@ class SkillsTest(unittest.TestCase):
         if env_extra:
             env.update(env_extra)
         result = subprocess.run(
-            [sys.executable, str(self.repo / "scripts/skills.py"), *args, "--home", str(self.home)],
+            [sys.executable, str(self.repo / "scripts/internal/skills.py"), *args, "--home", str(self.home)],
             capture_output=True, text=True, check=False, env=env,
         )
         self.assertEqual(result.returncode, code, result.stdout + result.stderr)

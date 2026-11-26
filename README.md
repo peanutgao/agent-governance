@@ -1,6 +1,6 @@
 # agent-governance — 个人多设备 AI 开发约束
 
-个人跨设备共享的全局 AI 开发约束仓库。macOS、Linux 和 Windows 原生的新机入口见 [一键部署](onboarding.md#新设备一键部署)。已经拉取本仓的设备可执行 `bash scripts/install.sh`，安装全局 AI 约束和常用 Skills。
+个人跨设备共享的全局 AI 开发约束仓库。macOS、Linux 和 Windows 原生的新机入口见 [一键部署](onboarding.md#新设备一键部署)。已经拉取本仓的设备可执行 `bash scripts/gov install`，安装全局 AI 约束和常用 Skills。
 
 项目级约束、架构、Spec、Contract、测试和发布说明由各项目仓库自己维护。本仓库不收集项目代码，也不替项目维护项目级 AI 约束。
 
@@ -15,14 +15,12 @@ docs/guides/                           # 跨项目 AI 上下文工程建设方�
 templates/project/AI-GOVERNANCE.md     # 项目仓库携带的公共治理快照模板
 templates/project/kit/                 # 语言无关的轻量自包含项目治理脚手架模板
 skills/                                # 全局 Skills 清单与仓内本机版本（含 ai-change-flow、new-project-bootstrap）
-scripts/install.sh                     # 安装全局规则和清单中的 Skills
-scripts/distribute.sh                  # 分发全局入口（--check / --rollback / --list-targets）
-scripts/sync-project-governance.sh     # 从模板生成/更新项目仓 AI-GOVERNANCE.md（--check / --root / --repos）
-scripts/init-project-governance.sh     # 轻量初始化新项目的自包含治理骨架（--target / --apps / --add-app / --dry-run）
-scripts/check-commit-attribution.sh    # commit 归属检查（--governance / --print-policy）
-scripts/check-rule-paths.sh            # 规则内路径可达性检查（默认查仓内引用，--installed 查本机入口）
-scripts/check-version-bump.sh          # 规则改动版本递增检查
-tests/run-all.sh                       # 全部测试的唯一入口
+scripts/gov                            # 统一 CLI 入口（install / distribute / skills / check / project / test）
+scripts/bootstrap.sh                   # macOS / Linux 新设备远程一键部署入口
+scripts/bootstrap.ps1                  # Windows 原生 PowerShell 新设备远程一键部署入口
+scripts/check-commit-attribution.sh    # 独立单文件 commit 归属检查器（分发到 ~/.codex/ 与下游项目）
+scripts/internal/                      # gov 内部实现模块（分发、Skills、建项、快照同步与门禁）
+tests/run-all.sh                       # 全部测试的唯一入口（也可通过 bash scripts/gov test 运行）
 VERSION                                # 基线版本号
 ```
 
@@ -71,7 +69,7 @@ WorkBuddy 需要单独处理：它的用户级规则是 `<configDir>/rules/*.md`
 
 项目在自身 `commit-msg` 的最后一步接入归属检查器，由 CI 对新增提交再次校验。这样 Git 继续按原有配置选择项目钩子，项目可以在检查前完成提交消息的改写。
 
-- 本仓不修改全局 `core.hooksPath`，也不再分发旧版全局 `git-hooks/`。项目请直接复制 `~/.codex/check-commit-attribution.sh`（或使用脚手架 `scripts/init-project-governance.sh`）接入本地 `commit-msg` 与 CI。
+- 本仓不修改全局 `core.hooksPath`，也不再分发旧版全局 `git-hooks/`。项目请直接复制 `~/.codex/check-commit-attribution.sh`（或使用脚手架 `bash scripts/gov project init`）接入本地 `commit-msg` 与 CI。
 - `--check` 校验本机受管副本与当前工作树的一致性。项目的钩子执行链与 CI 须分别验证。
 
 治理仓在本地把 `core.hooksPath` 指向 `.githooks`，用 `--governance` 模式描述本政策。
@@ -80,15 +78,15 @@ WorkBuddy 需要单独处理：它的用户级规则是 `<configDir>/rules/*.md`
 
 1. 修改 `global/`、分发脚本、检查脚本或测试。
 2. **bump `VERSION`**（严格递增的 SemVer）。
-3. 运行 `bash tests/run-all.sh` 验证全量测试（本地无副作用隔离夹具，单窗口可直接执行）；CI 还会核对当前提交的版本与规则树。
-4. 提交并推送；其他设备执行 `git pull` 和 `bash scripts/distribute.sh`。
+3. 运行 `bash scripts/gov test`（即 `bash tests/run-all.sh`）验证全量测试（本地无副作用隔离夹具，单窗口可直接执行）；CI 还会核对当前提交的版本与规则树。
+4. 提交并推送；其他设备执行 `git pull` 和 `bash scripts/gov install`（或仅规则分发 `bash scripts/gov distribute`）。
 
 ## 分发到设备
 
 ```bash
-bash scripts/distribute.sh
-bash scripts/distribute.sh --check          # 比对当前工作树与已安装副本
-bash scripts/distribute.sh --list-targets   # 只看目标清单，不安装
+bash scripts/gov distribute
+bash scripts/gov distribute --check          # 比对当前工作树与已安装副本
+bash scripts/gov distribute --list-targets   # 只看目标清单，不安装
 ```
 
 分发门禁失败时中止，受管副本保持原状：
@@ -109,12 +107,12 @@ bash scripts/distribute.sh --list-targets   # 只看目标清单，不安装
 回滚到最近一次分发前的整组状态。若分发中断，确认操作已经退出后再处理遗留锁目录：
 
 ```bash
-bash scripts/distribute.sh --rollback
+bash scripts/gov distribute --rollback
 ```
 
 ## 全局 Skills
 
-统一安装先分发规则，再以 `skills.py sync --adopt-all` 同步 [Skills 清单](skills/manifest.json)（自动覆盖同名旧 Skill 并保留事务快照以支持回退）。安装条件、同步目标、冲突接管和回退见 [全局 Skills 使用说明](skills/README.md)。如果规则已分发而 Skills 同步失败，解决同步错误后可单独重跑 `python3 scripts/skills.py sync --adopt-all`。
+统一安装先分发规则，再以 `bash scripts/gov skills sync --adopt-all` 同步 [Skills 清单](skills/manifest.json)（自动覆盖同名旧 Skill 并保留事务快照以支持回退）。安装条件、同步目标、冲突接管和回退见 [全局 Skills 使用说明](skills/README.md)。如果规则已分发而 Skills 同步失败，解决同步错误后可单独重跑 `bash scripts/gov skills sync --adopt-all`。
 
 ### 详细流程作为 Skill，不再单独分发文件
 
@@ -130,7 +128,7 @@ L2 变更、非显然 Bug、需求变更门禁和独立方案复核的完整流�
 
 ### 规则长度与路径门禁
 
-工具对用户级规则文件普遍有正文上限，且超限时**静默丢弃**而不是报错——规则看起来装好了、实际不生效。分发前会拦住超限内容（单文件 ≤ 24000 字节且 WorkBuddy 规则 ≤ 40000 字符，见 `scripts/distribute.sh --list-targets` 末尾输出的当前上限）。`scripts/check-rule-paths.sh` 默认静态校验规则和文档内引用的仓内路径（CI 可直接运行），`--installed` 模式另行检查本机已分发入口是否可达。
+工具对用户级规则文件普遍有正文上限，且超限时**静默丢弃**而不是报错——规则看起来装好了、实际不生效。分发前会拦住超限内容（单文件 ≤ 24000 字节且 WorkBuddy 规则 ≤ 40000 字符，见 `bash scripts/gov distribute --list-targets` 末尾输出的当前上限）。`bash scripts/gov check paths` 默认静态校验规则和文档内引用的仓内路径（CI 可直接运行），`--installed` 模式另行检查本机已分发入口是否可达。
 
 ## 项目级 AI 约束
 
@@ -144,20 +142,20 @@ L2 变更、非显然 Bug、需求变更门禁和独立方案复核的完整流�
 
 ```bash
 # 1. 初始化单端新项目（支持 --dry-run 预览）
-bash scripts/init-project-governance.sh --target /path/to/new-project --project-name MyProject
+bash scripts/gov project init --target /path/to/new-project --project-name MyProject
 
 # 1b. 初始化多端 Monorepo（顶层共有 docs/overview.md + docs/contracts/ + docs/specs/，各端独立 AGENTS.md / tech-stack / Spec 索引，根 AGENTS.md 自动带多端路由表）
-bash scripts/init-project-governance.sh --target /path/to/test-project --project-name test-project \
+bash scripts/gov project init --target /path/to/test-project --project-name test-project \
   --apps test-project-backend,test-project-client-ios,test-project-admin,test-project-frontend
 # 后续给已初始化的多端项目新增子端：
-bash scripts/init-project-governance.sh --target /path/to/test-project --add-app test-project-client-android
+bash scripts/gov project init --target /path/to/test-project --add-app test-project-client-android
 
 # 2. 团队成员克隆业务仓后启用本地 commit-msg 钩子（Spec 同步 + Commit 归属）
 bash <project>/scripts/governance/install-hooks.sh
 ```
 
 - **高信号极简落盘**：只放全工具通用的 `<project>/AGENTS.md`（+ `<project>/CLAUDE.md` 与 `<project>/.github/copilot-instructions.md` 薄指针）、`<project>/AI-GOVERNANCE.md`、`<project>/docs/` 精简骨架（`overview.md`、`contracts/`、`architecture/tech-stack.md`、`specs/`、`todos/`、`adr/`）、`<project>/.github/CODEOWNERS`（保护治理门禁与依赖清单）、`<project>/.github/PULL_REQUEST_TEMPLATE.md`、`<project>/.github/workflows/ai-governance.yml`，以及仅 2 个轻量门禁脚本（`check-spec-sync.py` 与本仓同源的 `check-commit-attribution.sh`）。
-- **零自研语言解析器**：Design Token 防硬编码、组件二次封装防绕过由各端成熟原生 Linter（ESLint / Stylelint / Checkstyle / SwiftLint / Detekt 等）承接；`<project>/AI-GOVERNANCE.md` 后续升级统一继续使用下方的 `scripts/sync-project-governance.sh`。从零新建项目可配合本地 Skill `new-project-bootstrap`（位于 `skills/local/new-project-bootstrap/SKILL.md`）按 6 阶段门禁起盘。
+- **零自研语言解析器**：Design Token 防硬编码、组件二次封装防绕过由各端成熟原生 Linter（ESLint / Stylelint / Checkstyle / SwiftLint / Detekt 等）承接；`<project>/AI-GOVERNANCE.md` 后续升级统一继续使用下方的 `bash scripts/gov project sync`。从零新建项目可配合本地 Skill `new-project-bootstrap`（位于 `skills/local/new-project-bootstrap/SKILL.md`）按 6 阶段门禁起盘。
 
 ### 同步单文件公共治理快照（既有项目向后兼容）
 
@@ -166,9 +164,9 @@ bash <project>/scripts/governance/install-hooks.sh
 ```bash
 # 1. 在治理仓发布已通过检查的新版本
 # 2. 从模板重新生成目标项目快照（可用 --root 或环境变量 PROJECT_GOVERNANCE_ROOT）
-bash scripts/sync-project-governance.sh --root /path/to/workspace
+bash scripts/gov project sync --root /path/to/workspace
 # 3. 只校验不写入
-bash scripts/sync-project-governance.sh --check --root /path/to/workspace
+bash scripts/gov project sync --check --root /path/to/workspace
 ```
 
 通过 `--root` 或 `PROJECT_GOVERNANCE_ROOT` 指定目标项目根目录；未传 `--repos`（或 `PROJECT_GOVERNANCE_REPOS`）时，自动发现根目录下含 `.git`、`AI-GOVERNANCE.md`、`AGENTS.md` 或 `CLAUDE.md` 的子目录。生成器不会触碰各仓 `AGENTS.md`、specs、业务代码或 Git 历史。
@@ -192,7 +190,7 @@ exec bash "$repo_root/scripts/check-commit-attribution.sh" --message "$1"
 ```bash
 cd agent-governance
 git pull --ff-only
-bash scripts/install.sh
+bash scripts/gov install
 ```
 
 首次使用见 [`onboarding.md`](onboarding.md)。跨项目与多仓库上下文工程化设计参考见 [`docs/guides/大型软件项目_AI_Agent_上下文工程化建设方案_v2.0.md`](docs/guides/大型软件项目_AI_Agent_上下文工程化建设方案_v2.0.md) 与 [`docs/guides/AI_Agent_多项目上下文工程实施方案.md`](docs/guides/AI_Agent_多项目上下文工程实施方案.md)（仅作按需阅读参考，不注入全局规则上下文）；规则、脚本和检查的当前行为以代码、测试和提交历史为准。

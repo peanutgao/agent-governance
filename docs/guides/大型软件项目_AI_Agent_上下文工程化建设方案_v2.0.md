@@ -4,7 +4,7 @@
 > **日期**：2026-11-24  
 > **适用范围**：前端、后端、移动端、全栈、Monorepo、多仓库及企业级项目（覆盖存量改造与新建项目起盘）  
 > **目标 Agent**：Codex、Claude Code、OpenCode、Cursor、GitHub Copilot、Antigravity、WorkBuddy、ZCode 等具备代码检索能力的 Agent  
-> **状态**：架构设计参考指南（新建项目可直接经本仓 [`scripts/init-project-governance.sh`](../../scripts/init-project-governance.sh) 与 [`new-project-bootstrap`](../../skills/local/new-project-bootstrap/SKILL.md) Skill 落地；存量仓库先走 P0 只读盘点再增量接入）
+> **状态**：架构设计参考指南（新建项目可直接经本仓 [`scripts/gov`](../../scripts/gov)（`project init`）与 [`new-project-bootstrap`](../../skills/local/new-project-bootstrap/SKILL.md) Skill 落地；存量仓库先走 P0 只读盘点再增量接入）
 
 ## 1. 建设背景与目标
 
@@ -129,7 +129,7 @@ contract-repo/    （仅当组织已经有共享契约仓库时）
 
 ### 5.1 推荐分类
 
-新建项目默认将文档统一收口在 `docs/` 下（与本仓 [`scripts/init-project-governance.sh`](../../scripts/init-project-governance.sh) 保持一致）；存量仓库优先复用既有目录结构，仅建最小导航入口：
+新建项目默认将文档统一收口在 `docs/` 下（与本仓 [`scripts/gov`](../../scripts/gov) `project init` 保持一致）；存量仓库优先复用既有目录结构，仅建最小导航入口：
 
 ```text
 project/
@@ -220,7 +220,7 @@ project/
 
 单靠 Markdown 指令无法在长会话中 100% 防止 AI 偏移规范、绕过二次封装组件或忘记更新 Spec。新建项目（单端或多端 Monorepo）应把规则与确定性门禁在起盘阶段一次落好（详见 [`new-project-bootstrap`](../../skills/local/new-project-bootstrap/SKILL.md) Skill）：
 
-1. **6 阶段起盘顺序**：需求与 Non-Goals 澄清（`grilling`）→ 规范目录与轻量自包含治理落盘（`scripts/init-project-governance.sh`）→ 成熟开源选型/ADR/首版 Spec & Todo 与独立方案复核 → **最小基建与二次封装先行**（UI 端先建 Primitive/Semantic Design Token 与核心组件二次封装；全端先建网络/日志/错误/存储三方库薄封装，并把目录地图写入 `docs/architecture/tech-stack.md`）→ **Walking Skeleton**（跑通 1 条最小端到端烟测链路 + 构建/单测/原生 Lint/治理门禁全绿）→ 放行业务功能开发。
+1. **6 阶段起盘顺序**：需求与 Non-Goals 澄清（`grilling`）→ 规范目录与轻量自包含治理落盘（`bash scripts/gov project init`）→ 成熟开源选型/ADR/首版 Spec & Todo 与独立方案复核 → **最小基建与二次封装先行**（UI 端先建 Primitive/Semantic Design Token 与核心组件二次封装；全端先建网络/日志/错误/存储三方库薄封装，并把目录地图写入 `docs/architecture/tech-stack.md`）→ **Walking Skeleton**（跑通 1 条最小端到端烟测链路 + 构建/单测/原生 Lint/治理门禁全绿）→ 放行业务功能开发。
 2. **三类低维护成本硬门禁**：
    - **代码与样式规范**：交给各端成熟**原生 Linter**（ESLint `no-restricted-imports` + Stylelint Token 规则、Java Checkstyle/ArchUnit、iOS SwiftLint `custom_rules`、Kotlin Detekt `ForbiddenImport`），报错文案直接指路到项目封装入口，不自研跨语言正则扫描器；
    - **Spec / Todo 防遗忘与提交归属**：用轻量 `check-spec-sync.py`（改业务源码要求同步 `docs/specs/` 或 `docs/contracts/`，仅放行显式 `Spec-Exempt:`）+ `check-commit-attribution.sh` 接入本地 `commit-msg` 与 CI，跨所有 AI 工具生效；
@@ -337,5 +337,4 @@ AOCI 代表可供评估的长期项目认知路线，但不是基础必选项。
 **配套文件与本仓落地入口**：
 - 详细实施方案（含存量 P0 盘点、多工具加载验收、检索停止条件与跨仓发布序列）：[AI Agent 多项目上下文工程实施方案](./AI_Agent_多项目上下文工程实施方案.md)
 - 新项目 6 阶段建项与存量接入 Skill：[`skills/local/new-project-bootstrap/SKILL.md`](../../skills/local/new-project-bootstrap/SKILL.md)
-- 轻量自包含项目治理初始化脚本：[`scripts/init-project-governance.sh`](../../scripts/init-project-governance.sh)
-- 既有项目 `AI-GOVERNANCE.md` 公共快照同步脚本：[`scripts/sync-project-governance.sh`](../../scripts/sync-project-governance.sh)
+- 统一治理 CLI 入口（含轻量建项 `project init` 与公共快照同步 `project sync`）：[`scripts/gov`](../../scripts/gov)

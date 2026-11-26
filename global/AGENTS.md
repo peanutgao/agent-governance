@@ -1,6 +1,6 @@
 # 个人全局 AI 开发约束
 
-本文件是 `agent-governance` 分发到每台开发设备的个人全局基线（改动回治理仓，勿手改本机副本；分发清单与校验见治理仓 `README.md` 及 `bash scripts/distribute.sh --check`）。它只承载跨项目通用约束，项目专属规范、架构、Spec、Contract 与命令由项目仓库维护。
+本文件是 `agent-governance` 分发到每台开发设备的个人全局基线（改动回治理仓，勿手改本机副本；分发清单与校验见治理仓 `README.md` 及 `bash scripts/gov distribute --check`）。它只承载跨项目通用约束，项目专属规范、架构、Spec、Contract 与命令由项目仓库维护。
 
 ## 效率优先
 
