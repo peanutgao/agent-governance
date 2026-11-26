@@ -67,7 +67,7 @@ bash scripts/install.sh
 ## 本地校验与回滚
 
 ```bash
-bash tests/run-all.sh                     # 已明确授权时执行全部测试套件
+bash tests/run-all.sh                     # 执行全部隔离测试套件
 bash scripts/distribute.sh --list-targets  # 只看目标清单，不安装
 bash scripts/distribute.sh --rollback      # 回到最近一次分发前的整组状态
 ```

@@ -9,21 +9,21 @@ Interview the user relentlessly until you reach a shared understanding. Map open
 
 ## How to run the session
 
-1. **Look up facts first.** If a question can be answered from the codebase, Specs, Contracts, ADRs, or environment, check it yourself (or delegate lookup to a read-only sub-agent when available). Never ask the user to confirm verifiable facts.
-2. **Start with top-level branches.** Outline the key top-level decision branches (typically 3–6 items) and start with the most foundational branch whose prerequisites are already settled (the **frontier**).
-3. **Walk one branch at a time, one question at a time.** Never dump a multi-question checklist. Wait for the user's answer before picking the next question.
-4. **Verify every answer independently.** Treat each answer as input to be checked against approved Specs, Contracts, code, or reproduction evidence. Never silently accept a factually false premise.
-5. **Distinguish facts from business choices.** Directly point out verifiable factual conflicts with evidence; respect explicit business trade-offs once the user understands the impact.
+1. **Look up facts first (in parallel).** If a question can be answered from the codebase, Specs, Contracts, ADRs, or environment, check it yourself with batched/parallel read-only lookups (use a fast lightweight read-only sub-agent when available). Never ask the user to confirm verifiable facts.
+2. **Prune from the root first.** Order questions by maximum pruning value: scope & Non-Goals → core architecture/route → contracts → edge behavior. Answering one root question should eliminate whole downstream subtrees.
+3. **Skip reversible defaults.** Do NOT spend a round on low-risk, easily reversible engineering defaults (naming, standard timeouts/pagination, routine copy). Pick the best-practice default and list all adopted defaults in one compact line at closure.
+4. **Strictly one question at a time, with fast-track preview.** Never dump a multi-question checklist. Ask only the single highest-value frontier question, and add a one-line preview of possible remaining branch names (no answer required) so the user can either answer one-by-one or say `"A, 其余按建议直接做"` to fast-track into implementation.
+5. **Verify every answer independently.** Check each answer against approved Specs, Contracts, code, or reproduction evidence. Never silently accept a factually false premise; distinguish verifiable factual conflicts from explicit business trade-offs.
 
 ## Question format
 
-Use this unified format (aligned with `global/AGENTS.md` and `ai-change-flow`) for every round:
+Keep every field to **1 concise sentence** (3-second scan), with lettered options and the recommended choice first:
 
 ```text
-情景：说明当前已知事实、正在处理的决策分支和触发问题。
-影响：说明这个决定会影响什么范围、契约或后续实现。
-建议：给出 AI 推荐的选项和理由；建议不是用户决定。
-问题：只提出一个当前最需要用户确认的问题。
+情景：一句话交代当前事实与待决分支。
+影响：一句话说明对范围、契约或返工的影响。
+建议：A（推荐）... / B ...（一句话理由；建议不是决定）。
+问题：选择 A 还是 B？（后续可能分支：<名称1>、<名称2>，视本问结果决定；可回「A，其余按建议直接做」快通）
 ```
 
 When the user's previous answer conflicts with Spec, Contract, code, or reproduction evidence, challenge respectfully before moving on:
@@ -32,12 +32,12 @@ When the user's previous answer conflicts with Spec, Contract, code, or reproduc
 情景：你刚才的回答是「...」，当前正在决定「...」。
 核对：Spec / Contract / 代码 / 复现结果显示「...」。
 冲突：这与「...」不一致，可能导致「...」影响。
-建议：我建议「...」，理由是「...」。
-问题：是否确认采用「...」？
+建议：A（推荐）... / B ...。
+问题：是否确认采用 A？
 ```
 
 ## Stopping condition
 
-The session ends when the frontier is empty — every branch of the design tree is resolved with no remaining "it depends" gaps. Close with a concise summary of the confirmed decisions.
+The session ends when all high-impact branches are resolved (or the user fast-tracks remaining reversible branches with defaults). Close with a concise summary listing confirmed decisions and adopted defaults.
 
 `grilling` only surfaces assumptions, exposes gaps, and drives decisions; its output is not authoritative Spec until the user confirms and the confirmed decisions are written into the project's Spec, Contract, or ADR. Do not start implementation until shared understanding is confirmed.

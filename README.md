@@ -80,7 +80,7 @@ WorkBuddy 需要单独处理：它的用户级规则是 `<configDir>/rules/*.md`
 
 1. 修改 `global/`、分发脚本、检查脚本或测试。
 2. **bump `VERSION`**（严格递增的 SemVer）。
-3. 先跑相关回归。获得全量测试授权后，运行 `bash tests/run-all.sh`；CI 还会核对当前提交的版本与规则树。
+3. 运行 `bash tests/run-all.sh` 验证全量测试（本地无副作用隔离夹具，单窗口可直接执行）；CI 还会核对当前提交的版本与规则树。
 4. 提交并推送；其他设备执行 `git pull` 和 `bash scripts/distribute.sh`。
 
 ## 分发到设备

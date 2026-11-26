@@ -40,9 +40,9 @@ description: "Opt-in structured planning and execution workflow for new projects
 - 严格遵守「只改范围内文件、不吞错掩盖根因、验证先局部后整体」；
 - 绝不在未经用户明确授权时执行 `git commit` 或全量破坏性操作。
 
-### 5. Parallel Subagents（可选，严守并行门禁）
-- 默认单 Agent 串行实施；仅在需求冻结、子任务无共享可变状态、拆分经用户确认且使用 worktree/分区隔离时，才派发并行子 Agent；
-- 合并后必须重新审查集成点并做跨模块验证。
+### 5. Parallel Subagents（独立子任务优先并发）
+- 宿主支持子 Agent 且存在多个独立子项时优先并发：只读调研/排查/审查自动并发；独立写入任务在需求明确、无顺序依赖且满足文件分区或 git worktree 隔离时优先并发（无需每次单独审批拆分），严禁多 Agent 并发写同一组文件；
+- 写入子 Agent 交付前各自自验，合并后必须由主会话统一审查集成点并做跨模块集成验证。
 
 ### 6. Review & Handoff（对抗性复核与收尾）
 - 宣称完成前执行系统性对抗性复核（根因、边界、反例、回归与验证证据），必要时跑 `code-review` 双轴审查；
