@@ -4,7 +4,7 @@
 
 ## 新设备一键部署
 
-部署入口安装全局规则、清单中的 Skills，以及安装所需的 Git、Python 和 Node.js/npm。运行时可用时直接复用，否则用 conda-forge 在当前用户目录创建专用运行时。支持 macOS、Linux 和 Windows 原生的 x64、ARM64。首次部署需要访问 GitHub、conda-forge 和 npm。
+部署入口安装全局规则、清单中的 Skills，以及安装所需的 Git 和 Python。运行时可用时直接复用，否则用 conda-forge 在当前用户目录创建专用运行时。支持 macOS、Linux 和 Windows 原生的 x64、ARM64。首次部署需要访问 GitHub（缺少 Git/Python 时还需访问 conda-forge）。
 
 **macOS / Linux** 在终端粘贴整段。系统需能运行 Bash、curl、tar，解包可用 bzip2 并支持 SHA-256 校验。
 

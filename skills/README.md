@@ -1,6 +1,6 @@
 # 全局 Skills 同步
 
-在 macOS、Linux 或 Windows 的治理仓根目录使用 Python 3.9 或更新版本。新设备可用 [一键部署入口](../onboarding.md#新设备一键部署) 准备运行时。首次获取上游 Skill 还需要 `curl`、npm、Node.js 22.20 或更新版本，以及可访问 GitHub 和 npm 的网络。
+在 macOS、Linux 或 Windows 的治理仓根目录使用 Python 3.9 或更新版本。新设备可用 [一键部署入口](../onboarding.md#新设备一键部署) 准备运行时。首次获取上游 Skill 还需要 `curl` 以及可访问 GitHub 的网络（不依赖 Node.js 或 npm）。
 
 ```bash
 bash scripts/gov skills plan
@@ -27,7 +27,7 @@ bash scripts/gov skills sync --adopt-all
 
 快照存于 `~/.local/state/agent-governance/skills`，默认保留最近 10 次事务快照。清单移除或目标路径发生变化后，已有受管路径显示为 `retained`，可用 `bash scripts/gov skills prune` 事务化清理或用 `rollback` 回退。检验另一台设备的默认路径时，可以传入一个已创建的临时目录 `--home <目录>`。
 
-需要通过本机代理获取 GitHub 源时，在 `sync` 传入 `--proxy <代理地址>`。npm 仍按其自身的网络配置访问注册表。
+需要通过本机代理获取 GitHub 源时，在 `sync` 传入 `--proxy <代理地址>`。
 
 ## 分发路径
 
@@ -46,7 +46,7 @@ bash scripts/gov skills sync --adopt-all
 
 ## 更新来源
 
-以 [manifest.json](manifest.json) 为清单。自改版在 `local/` 下保留上游许可证。升级原版时选择上游 Git 提交，保持 Vercel Skills CLI 锁版，用临时工作目录分发并核对 `SKILL.md`、附带资料和新摘要。摘要使用 `scripts/internal/skills.py` 的 `skill_key` 对 Vercel CLI 安装得到的目录计算。
+以 [manifest.json](manifest.json) 为清单。自改版在 `local/` 下保留上游许可证。升级原版时选择上游 Git 提交，用纯 Python 从锁定 commit 归档提取目录（自动排除 `metadata.json`、`.git`、`__pycache__`、`__pypackages__`），核对 `SKILL.md`、附带资料并用 `scripts/internal/skills.py` 的 `skill_key` 计算新摘要。
 
 `bash scripts/gov install` 默认以 `skills sync --adopt-all` 同步 [清单](manifest.json) 中的全部 Skills（自动覆盖同名旧副本并保留事务快照），具体名称和来源见清单。`code-review`、`grilling`、`evaluate-business-value`、`superpowers`、`ai-change-flow`、`new-project-bootstrap` 使用仓内的本机版本。
 

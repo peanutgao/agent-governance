@@ -86,9 +86,8 @@ class SkillsTest(unittest.TestCase):
         return self.home / directory / name
 
     def test_real_manifest_and_local_skills_are_valid(self):
-        loaded, cli = skills_mod.load_skills()
+        loaded = skills_mod.load_skills()
         names = {skill.name for skill in loaded}
-        self.assertRegex(cli, r"^\d+\.\d+\.\d+$")
         self.assertIn("grilling", names)
         self.assertIn("ai-change-flow", names)
         self.assertIn("new-project-bootstrap", names)
@@ -96,6 +95,7 @@ class SkillsTest(unittest.TestCase):
         self.assertNotIn("grill-me", names)
         self.assertNotIn("karpathy-guidelines", names)
         manifest = json.loads((REPO / "skills/manifest.json").read_text(encoding="utf-8"))
+        self.assertNotIn("registryCli", manifest)
         self.assertIn("windowsDigest", manifest["skills"]["impeccable"])
         self.assertNotEqual(
             manifest["skills"]["impeccable"]["digest"],
@@ -295,6 +295,11 @@ class SkillsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "无效的归档路径"):
             skills_mod.extract_archive(traversal_tar, repo, commit, {"skills/demo"}, self.sandbox / "out-trav")
 
+        win_trav_tar = self.sandbox / "win-traversal.tar.gz"
+        make_tar(win_trav_tar, [(f"{prefix}/skills/demo/..\\..\\evil.txt", "file", "boom")])
+        with self.assertRaisesRegex(ValueError, "无效的归档路径"):
+            skills_mod.extract_archive(win_trav_tar, repo, commit, {"skills/demo"}, self.sandbox / "out-win-trav")
+
         symlink_tar = self.sandbox / "symlink.tar.gz"
         make_tar(symlink_tar, [(f"{prefix}/skills/demo/link", "symlink", "/etc/passwd")])
         with self.assertRaisesRegex(ValueError, "无效的归档文件类型"):
@@ -449,6 +454,81 @@ class SkillsTest(unittest.TestCase):
         self.assertFalse((state_root / "pending.json").exists())
         self.assertIn("Cloned skill", (conflict_dir / "SKILL.md").read_text())
         self.assertEqual((conflict_dir / "pack/obj.pack").read_text(encoding="utf-8"), "immutable pack\n")
+
+    def test_pure_python_upstream_extraction_without_npm(self):
+        commit_a = "1" * 40
+        commit_b = "2" * 40
+        commit_c = "3" * 40
+
+        def fake_extract(repo, commit, skill_paths, checkout, proxy):
+            checkout.mkdir(parents=True, exist_ok=True)
+            if repo == "owner/subpath":
+                base = checkout / "skills" / "demo-sub"
+                (base / "scripts").mkdir(parents=True)
+                (base / "__pycache__").mkdir()
+                (base / "SKILL.md").write_text("---\nname: demo-sub\ndescription: Sub\n---\nSub body\n", encoding="utf-8")
+                (base / "metadata.json").write_text('{"skip":true}\n', encoding="utf-8")
+                (base / "__pycache__" / "junk.pyc").write_bytes(b"junk")
+                run_sh = base / "scripts" / "run.sh"
+                run_sh.write_text("#!/bin/sh\necho ok\n", encoding="utf-8")
+                if os.name != "nt":
+                    run_sh.chmod(0o755)
+            elif repo == "owner/root-rename":
+                (checkout / "SKILL.md").write_text("---\nname: orig-root\ndescription: Root\n---\nRoot body\n", encoding="utf-8")
+                (checkout / "metadata.json").write_text('{"skip":true}\n', encoding="utf-8")
+                (checkout / "guide.md").write_text("guide\n", encoding="utf-8")
+            elif repo == "owner/multi-agent":
+                # 模拟 impeccable 类仓库：存在多个 agent 目录，须优先命中 .agents/skills/<name>。
+                for rel, text in (
+                    (".claude/skills/multi-pick", "Claude copy\n"),
+                    (".cursor/skills/multi-pick", "Cursor copy\n"),
+                    (".agents/skills/multi-pick", "Canonical agents copy\n"),
+                ):
+                    d = checkout / rel
+                    d.mkdir(parents=True)
+                    (d / "SKILL.md").write_text(f"---\nname: multi-pick\ndescription: Pick\n---\n{text}", encoding="utf-8")
+
+        # 预先计算期望摘要（只含过滤后的正式文件）。
+        expected_dir = self.sandbox / "expected"
+        sub_exp = expected_dir / "demo-sub"
+        (sub_exp / "scripts").mkdir(parents=True)
+        (sub_exp / "SKILL.md").write_text("---\nname: demo-sub\ndescription: Sub\n---\nSub body\n", encoding="utf-8")
+        sub_sh = sub_exp / "scripts" / "run.sh"
+        sub_sh.write_text("#!/bin/sh\necho ok\n", encoding="utf-8")
+        if os.name != "nt":
+            sub_sh.chmod(0o755)
+
+        root_exp = expected_dir / "renamed-root"
+        root_exp.mkdir(parents=True)
+        (root_exp / "SKILL.md").write_text("---\nname: renamed-root\ndescription: Root\n---\nRoot body\n", encoding="utf-8")
+        (root_exp / "guide.md").write_text("guide\n", encoding="utf-8")
+
+        multi_exp = expected_dir / "multi-pick"
+        multi_exp.mkdir(parents=True)
+        (multi_exp / "SKILL.md").write_text("---\nname: multi-pick\ndescription: Pick\n---\nCanonical agents copy\n", encoding="utf-8")
+
+        entries = [
+            skills_mod.Skill("demo-sub", {"type": "github", "repo": "owner/subpath", "path": "skills/demo-sub", "commit": commit_a}, None, skills_mod.skill_key(sub_exp, "demo-sub")),
+            skills_mod.Skill("renamed-root", {"type": "github", "repo": "owner/root-rename", "path": ".", "upstreamName": "orig-root", "commit": commit_b}, None, skills_mod.skill_key(root_exp, "renamed-root")),
+            skills_mod.Skill("multi-pick", {"type": "github", "repo": "owner/multi-agent", "path": ".", "upstreamName": "multi-pick", "commit": commit_c}, None, skills_mod.skill_key(multi_exp, "multi-pick")),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(skills_mod, "extract_release", side_effect=fake_extract):
+            stage = Path(tmp)
+            prepared = skills_mod.prepare_sources(entries, stage, None)
+            self.assertFalse((prepared["demo-sub"] / "metadata.json").exists())
+            self.assertFalse((prepared["demo-sub"] / "__pycache__").exists())
+            if os.name != "nt":
+                self.assertTrue(bool((prepared["demo-sub"] / "scripts" / "run.sh").stat().st_mode & 0o111))
+            self.assertIn("name: renamed-root\n", (prepared["renamed-root"] / "SKILL.md").read_text(encoding="utf-8"))
+            self.assertIn("Canonical agents copy", (prepared["multi-pick"] / "SKILL.md").read_text(encoding="utf-8"))
+
+            # 摘要不匹配必须失败关闭。
+            bad_stage = stage / "bad-stage"
+            bad_stage.mkdir()
+            bad = skills_mod.Skill("multi-pick", entries[2].source, None, ["directory", "0" * 64])
+            with self.assertRaisesRegex(ValueError, "摘要不一致"):
+                skills_mod.prepare_sources([bad], bad_stage, None)
 
 
 if __name__ == "__main__":

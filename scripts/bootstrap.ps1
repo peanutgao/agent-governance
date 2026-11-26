@@ -17,19 +17,10 @@ function Test-RuntimeReady([string] $bashPath) {
     if (!(Test-Path -LiteralPath $bashPath -PathType Leaf)) { return $false }
     $git = Get-Command git.exe -ErrorAction SilentlyContinue
     $python = Get-Command python.exe -ErrorAction SilentlyContinue
-    $node = Get-Command node.exe -ErrorAction SilentlyContinue
-    $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
-    if (!$git -or !$python -or !$node -or !$npm -or $python.Source -like "$env:LOCALAPPDATA\Microsoft\WindowsApps\*") {
+    if (!$git -or !$python -or $python.Source -like "$env:LOCALAPPDATA\Microsoft\WindowsApps\*") {
         return $false
     }
     & $python.Source -c 'import sys; sys.exit(sys.version_info < (3, 9))' 2>$null
-    if ($LASTEXITCODE -ne 0) { return $false }
-    $nodeVersion = & $node.Source -p 'process.versions.node' 2>$null
-    $version = $null
-    if ($LASTEXITCODE -ne 0 -or ![version]::TryParse($nodeVersion, [ref]$version) -or $version -lt [version]'22.20') {
-        return $false
-    }
-    & $npm.Source --version 2>$null | Out-Null
     return ($LASTEXITCODE -eq 0)
 }
 
@@ -94,7 +85,7 @@ try {
             $runtimeStage = Join-Path $state $folder
             [void](New-Item -ItemType Directory -Path $runtimeStage)
             $archive = Join-Path $temporary 'micromamba.tar.bz2'
-            Write-Host 'Installing Git, Python and Node.js/npm...'
+            Write-Host 'Installing Git and Python...'
             Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 -Uri "https://conda.anaconda.org/conda-forge/$target/micromamba-2.9.0-0.tar.bz2" -OutFile $archive
             if ((Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash -ne $sha) {
                 throw 'Runtime installer checksum mismatch.'
@@ -103,7 +94,7 @@ try {
             Assert-Exit 'Runtime installer extraction'
             $env:MAMBA_ROOT_PREFIX = Join-Path $runtimeStage 'cache'
             $prefix = Join-Path $runtimeStage 'env'
-            & (Join-Path $temporary 'Library\bin\micromamba.exe') --no-rc create --yes --no-shortcuts --override-channels --channel https://conda.anaconda.org/conda-forge --prefix $prefix git 'python=3.12' 'nodejs=24'
+            & (Join-Path $temporary 'Library\bin\micromamba.exe') --no-rc create --yes --no-shortcuts --override-channels --channel https://conda.anaconda.org/conda-forge --prefix $prefix git 'python=3.12'
             Assert-Exit 'Runtime installation'
             $bash = Use-Runtime $prefix
             if (!$bash) { throw 'The installed runtime failed verification.' }

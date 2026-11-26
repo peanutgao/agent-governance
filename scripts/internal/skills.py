@@ -2,6 +2,7 @@
 """Synchronize the governance repository's global Skills allowlist."""
 
 import argparse
+import concurrent.futures
 import os
 import re
 import shutil
@@ -32,6 +33,16 @@ TARGETS = {
 NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 CHANGES = {"install", "update", "adopt"}
 READY = {"ready", "reuse"}
+EXCLUDE_FILES = frozenset({"metadata.json"})
+EXCLUDE_DIRS = frozenset({".git", "__pycache__", "__pypackages__"})
+SKIP_SCAN_DIRS = frozenset({".git", "node_modules", "__pycache__", "__pypackages__"})
+PRIORITY_SEARCH_DIRS = (
+    "skills",
+    "skills/.curated",
+    "skills/.experimental",
+    "skills/.system",
+    ".agents/skills",
+)
 
 
 @dataclass
@@ -92,22 +103,103 @@ def load_skills():
             raise ValueError(f"无效的 Windows 摘要: {name}")
         digest = windows_digest if os.name == "nt" else source["digest"]
         skills.append(Skill(name, source, None, ["directory", digest]))
-    return skills, manifest.get("registryCli")
+    return skills
 
 
-def npm_command():
-    if os.name != "nt":
-        return ["npm"]
-    npm = shutil.which("npm.cmd")
-    node = shutil.which("node.exe")
-    if npm and node:
-        cli = Path(npm).with_name("node_modules") / "npm" / "bin" / "npm-cli.js"
-        if cli.is_file():
-            return [node, str(cli)]
-    raise ValueError("找不到 Windows Node.js/npm 安装，请使用 PowerShell 部署入口。")
+def frontmatter_name(entry):
+    text = entry.read_text(encoding="utf-8", errors="replace").replace("\r\n", "\n")
+    metadata, delimiter, _ = text.partition("\n---\n")
+    if not metadata.startswith("---\n") or not delimiter:
+        return None
+    names = re.findall(r"^name:[ \t]*([^\n]*?)[ \t]*$", metadata, re.MULTILINE)
+    if len(names) != 1:
+        return None
+    value = names[0].strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        value = value[1:-1].strip()
+    return value
 
 
-def prepare_sources(skills, cli, stage, proxy):
+def scan_skill_matches(base, upstream_name, max_depth=None):
+    matches = []
+    base_depth = len(base.parts)
+    for root, dirs, files in os.walk(base):
+        current = Path(root)
+        depth = len(current.parts) - base_depth
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_SCAN_DIRS)
+        if "SKILL.md" in files and frontmatter_name(current / "SKILL.md") == upstream_name:
+            matches.append(current)
+            dirs[:] = []
+            continue
+        if max_depth is not None and depth >= max_depth:
+            dirs[:] = []
+    return matches
+
+
+def find_skill_dir(checkout, skill_path, upstream_name):
+    if skill_path != ".":
+        candidate = checkout / skill_path
+        if not (candidate / "SKILL.md").is_file():
+            raise ValueError(f"上游归档缺少 SKILL.md: {skill_path}")
+        return candidate
+    if (checkout / "SKILL.md").is_file() and frontmatter_name(checkout / "SKILL.md") == upstream_name:
+        return checkout
+    for rel_dir in PRIORITY_SEARCH_DIRS:
+        base = checkout / rel_dir
+        if not base.is_dir():
+            continue
+        direct = base / upstream_name
+        if (direct / "SKILL.md").is_file() and frontmatter_name(direct / "SKILL.md") == upstream_name:
+            return direct
+        matches = scan_skill_matches(base, upstream_name, max_depth=3)
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise ValueError(f"在 {rel_dir} 中发现多个同名上游 Skill ({upstream_name}): {matches}")
+    matches = scan_skill_matches(checkout, upstream_name)
+    if len(matches) == 1:
+        return matches[0]
+    raise ValueError(f"无法在归档中唯一定位上游 Skill ({upstream_name}): 找到 {len(matches)} 处")
+
+
+def copy_skill_dir(src, dest):
+    dest.mkdir(parents=True, exist_ok=True)
+    for root, dirs, files in os.walk(src):
+        dirs[:] = sorted(d for d in dirs if d not in EXCLUDE_DIRS)
+        current = Path(root)
+        rel = current.relative_to(src)
+        target_dir = dest / rel
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for fname in sorted(files):
+            if fname in EXCLUDE_FILES:
+                continue
+            sp = current / fname
+            if sp.is_symlink():
+                raise ValueError(f"Skill 源目录须为独立文件，发现软链: {sp}")
+            dp = target_dir / fname
+            shutil.copyfile(sp, dp)
+            if os.name != "nt":
+                dp.chmod(0o755 if (sp.stat().st_mode & 0o111) else 0o644)
+
+
+def prepare_upstream_group(index, repo, commit, entries, stage, proxy):
+    work = stage / "_upstream" / str(index)
+    work.mkdir(parents=True)
+    checkout = work / "checkout"
+    extract_release(repo, commit, {skill.source["path"] for skill in entries}, checkout, proxy)
+    group_sources = {}
+    for skill in entries:
+        upstream_name = skill.source.get("upstreamName", skill.name)
+        src_dir = find_skill_dir(checkout, skill.source["path"], upstream_name)
+        destination = stage / skill.name
+        copy_skill_dir(src_dir, destination)
+        if upstream_name != skill.name:
+            rename_skill(destination / "SKILL.md", upstream_name, skill.name)
+        group_sources[skill.name] = destination
+    return group_sources
+
+
+def prepare_sources(skills, stage, proxy):
     sources = {}
     upstream = defaultdict(list)
     for skill in skills:
@@ -117,29 +209,18 @@ def prepare_sources(skills, cli, stage, proxy):
             destination = stage / skill.name
             shutil.copytree(skill.local, destination, symlinks=True)
             sources[skill.name] = destination
-    for index, ((repo, commit), entries) in enumerate(upstream.items()):
-        if not cli or not re.fullmatch(r"\d+\.\d+\.\d+", cli):
-            raise ValueError("清单需锁定 Vercel Skills CLI 版本")
-        work = stage / f"upstream-{index}"
-        work.mkdir()
-        checkout = work / "checkout"
-        extract_release(repo, commit, {skill.source["path"] for skill in entries}, checkout, proxy)
-        upstream_names = [skill.source.get("upstreamName", skill.name) for skill in entries]
-        subprocess.run(
-            [*npm_command(), "exec", "--yes", f"--package=skills@{cli}", "--", "skills", "add",
-             str(checkout),
-             "--skill", *upstream_names, "--agent", "codex", "--yes", "--copy"],
-            cwd=work, env={**os.environ, "DISABLE_TELEMETRY": "1", "NPM_CONFIG_IGNORE_SCRIPTS": "true"},
-            check=True, timeout=65,
-        )
-        for skill, upstream_name in zip(entries, upstream_names):
-            source = work / ".agents" / "skills" / upstream_name
-            if upstream_name != skill.name:
-                destination = stage / skill.name
-                shutil.copytree(source, destination, symlinks=True)
-                rename_skill(destination / "SKILL.md", upstream_name, skill.name)
-                source = destination
-            sources[skill.name] = source
+    items = list(enumerate(upstream.items()))
+    if len(items) == 1:
+        idx, ((repo, commit), entries) = items[0]
+        sources.update(prepare_upstream_group(idx, repo, commit, entries, stage, proxy))
+    elif len(items) > 1:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(items))) as executor:
+            futures = [
+                executor.submit(prepare_upstream_group, idx, repo, commit, entries, stage, proxy)
+                for idx, ((repo, commit), entries) in items
+            ]
+            for future in futures:
+                sources.update(future.result())
     for skill in skills:
         if skill_key(sources[skill.name], skill.name) != skill.key:
             raise ValueError(f"Skill 文件与规划摘要不一致: {skill.name}")
@@ -168,7 +249,7 @@ def extract_archive(archive, repo, commit, skill_paths, checkout):
             if "." not in skill_paths and not any(relative.startswith(path + "/") for path in skill_paths):
                 continue
             parts = PurePosixPath(relative)
-            if parts.is_absolute() or ".." in parts.parts:
+            if "\\" in relative or parts.is_absolute() or ".." in parts.parts:
                 raise ValueError(f"无效的归档路径: {member.name}")
             if member.isdir():
                 continue
@@ -186,11 +267,12 @@ def extract_release(repo, commit, skill_paths, checkout, proxy):
     url = f"https://codeload.github.com/{repo}/tar.gz/{commit}"
     command = [
         "curl", "-fsSL", "--proto", "=https", "--proto-redir", "=https",
-        "--connect-timeout", "8", "--max-time", "45",
+        "--retry", "2", "--retry-delay", "1",
+        "--connect-timeout", "15", "--max-time", "90",
     ]
     if proxy:
         command.extend(["--proxy", proxy])
-    result = subprocess.run([*command, "-o", str(archive), url], check=False, timeout=50)
+    result = subprocess.run([*command, "-o", str(archive), url], check=False, timeout=100)
     if result.returncode:
         raise ValueError(f"下载锁定的上游版本失败: {repo}@{commit} (curl {result.returncode})")
     extract_archive(archive, repo, commit, skill_paths, checkout)
@@ -305,7 +387,7 @@ def report(targets, state):
         print(f"retained  {path}")
 
 
-def sync(args, skills, cli, roots, store, state):
+def sync(args, skills, roots, store, state):
     selected = set(args.adopt)
     if selected:
         current_plan = make_plan(skills, roots, store, state, set())
@@ -319,7 +401,7 @@ def sync(args, skills, cli, roots, store, state):
         with tempfile.TemporaryDirectory(prefix="governance-skills-") as temporary:
             changed_names = {target.skill.name for target in changes}
             sources = prepare_sources(
-                [skill for skill in skills if skill.name in changed_names], cli, Path(temporary),
+                [skill for skill in skills if skill.name in changed_names], Path(temporary),
                 args.proxy,
             )
             store.apply(
@@ -381,7 +463,7 @@ def main():
         allow_external = args.home is None and os.environ.get("AGENT_GOVERNANCE_ALLOW_EXTERNAL_TARGETS") == "1"
         store = Store(state_root, device, allow_external)
         if args.command != "rollback":
-            skills, cli = load_skills()
+            skills = load_skills()
             roots = list(roots_for(device, args.home is not None))
         if args.command in {"plan", "status"}:
             if store.pending.exists():
@@ -403,7 +485,7 @@ def main():
                 return 0
             if args.command == "prune":
                 return prune(skills, roots, store, state)
-            return sync(args, skills, cli, roots, store, state)
+            return sync(args, skills, roots, store, state)
     except BlockingIOError:
         print("已有 Skills 同步正在执行。", file=sys.stderr)
         return 1

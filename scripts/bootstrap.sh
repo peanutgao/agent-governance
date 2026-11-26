@@ -18,9 +18,7 @@ runtime_ready() {
     xcode-select -p >/dev/null 2>&1 || return 1
   fi
   git --version >/dev/null 2>&1 &&
-    "$python_command" -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1 &&
-    node -e 'let [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || major === 22 && minor >= 20 ? 0 : 1)' >/dev/null 2>&1 &&
-    npm --version >/dev/null 2>&1
+    "$python_command" -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1
 }
 
 install_runtime() {
@@ -30,12 +28,12 @@ install_runtime() {
     Darwin:x86_64) target=osx-64; checksum=0426ecdc41636d369f57b8fe6acbf4385a69eca45b56d9ee7d3a840a9965d44f ;;
     Linux:aarch64) target=linux-aarch64; checksum=e705ffeed90ce0659eb546e4b1e1028c9eaf0bc9cc854867b19ac5ce0ba5852f ;;
     Linux:x86_64) target=linux-64; checksum=8761c382127e6363bd9e0a2451aa3ef90d071a79133f736e2f759a3bf13040dd ;;
-    *) fail '无法自动安装此架构的 Git、Python 和 Node.js。' ;;
+    *) fail '无法自动安装此架构的 Git 和 Python。' ;;
   esac
 
   runtime_stage="$(mktemp -d "$state_dir/runtime.XXXXXX")"
   local archive="$runtime_stage/micromamba.tar.bz2"
-  printf '正在准备 Git、Python 和 Node.js/npm…\n'
+  printf '正在准备 Git 和 Python…\n'
   curl -fsSL --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 120 \
     "https://conda.anaconda.org/conda-forge/$target/micromamba-2.9.0-0.tar.bz2" -o "$archive"
   if command -v sha256sum >/dev/null; then
@@ -47,7 +45,7 @@ install_runtime() {
   tar -xjf "$archive" -C "$runtime_stage" bin/micromamba
   MAMBA_ROOT_PREFIX="$runtime_stage/cache" "$runtime_stage/bin/micromamba" --no-rc create --yes \
     --no-shortcuts --override-channels --channel https://conda.anaconda.org/conda-forge \
-    --prefix "$runtime_stage/env" git 'python=3.12' 'nodejs=24'
+    --prefix "$runtime_stage/env" git 'python=3.12'
   export PATH="$runtime_stage/env/bin:$PATH"
   runtime_ready || fail '新建运行时无法运行。'
   ln -sfn "$runtime_stage/env" "$state_dir/runtime"
